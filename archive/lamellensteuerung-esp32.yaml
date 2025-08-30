@@ -1,0 +1,31 @@
+esphome:
+  name: lamellensteuerung-esp32
+  friendly_name: Lamellensteuerung ESP32
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "ScFhvXiOTeplUdCcqI8UfZknynFGeMhWpP59jUXJvFs="
+
+ota:
+  password: "2a6c63a5c2974e9e762753efdd4dfffb"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Lamellensteuerung-Esp32"
+    password: "JaLvHJa2S4jf"
+
+captive_portal:
+    

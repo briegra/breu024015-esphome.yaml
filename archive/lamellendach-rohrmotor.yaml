@@ -1,0 +1,113 @@
+esphome:
+  name: "lamellendach-rohrmotor"
+  platform: ESP8266
+  board: esp12e
+  
+  
+# Enable Home Assistant API
+
+ota:
+  password: "vlBpyX#7jSI5"  
+
+# Enable logging
+logger:
+#  level: WARN
+  logs:
+    sensor: DEBUG
+    switch: ERROR
+    api: DEBUG
+
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+
+  # Optional manual IP
+  manual_ip:
+    static_ip: 192.168.24.253
+    gateway: 192.168.24.1
+    subnet: 255.255.255.0  
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Relayboard02 Fallback Hotspot"
+    password: "E6i5EPeRH8aY"
+
+# Enable Web server
+web_server:
+  port: 80
+
+api:
+  password: "vlBpyX#7jSI5"
+
+captive_portal:
+
+
+text_sensor:            # WiFi Info
+  - platform: wifi_info
+    ip_address: 
+      name: "IP Address"
+    ssid:
+      name: "SSID"
+    bssid:
+      name: "BSSID"
+    mac_address:
+      name: "MAC Address"
+    
+  - platform: template
+    name: "Uptime Human Readable"
+    id: uptime_human
+
+sensor:
+  - platform: uptime
+    name: "Uptime Sensor"
+    id: uptime_sensor
+    update_interval: 60s
+    on_raw_value:
+      then:
+        - text_sensor.template.publish:
+            id: uptime_human
+            state: !lambda |-
+              int seconds = round(id(uptime_sensor).raw_state);
+              int days = seconds / (24 * 3600);
+              seconds = seconds % (24 * 3600);
+              int hours = seconds / 3600;
+              seconds = seconds % 3600;
+              int minutes = seconds / 60;
+              seconds = seconds % 60;
+              return (
+                (days ? to_string(days) + "d " : "") +
+                (hours ? to_string(hours) + "h " : "") +
+                (minutes ? to_string(minutes) + "m " : "") +
+                (to_string(seconds) + "s")
+              ).c_str();
+
+  # WiFi Signal Strength
+  - platform: wifi_signal
+    name: "WiFi Signal Sensor"
+    update_interval: 60s
+
+switch:
+  # Four relay outputs, exposed as switches in Home Assistant
+  - platform: gpio
+    pin: GPIO5
+    inverted: yes
+    id: relay1
+    name: "Relay1"
+
+  - platform: gpio
+    pin: GPIO4
+    inverted: yes
+    id: relay2
+    name: "Relay2"
+
+  - platform: gpio
+    pin: GPIO13
+    inverted: yes
+    id: relay3
+    name: "Relay3"
+
+  - platform: gpio
+    pin: GPIO15
+    inverted: yes
+    id: relay4
+    name: "Relay4"

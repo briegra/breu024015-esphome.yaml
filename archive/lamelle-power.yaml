@@ -1,0 +1,122 @@
+esphome:
+  name: lamelle-power
+  friendly_name: Lamelle_Power
+
+esp8266:
+  board: d1_mini
+
+
+# Enable logging
+logger:
+  level: WARN
+
+# Enable Home Assistant API
+api:
+  password: "vlBpyX#7jSI5"
+
+ota:
+  password: "c06c6f63f86fed1c5dedbf87ac618f25"  
+
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Lamelle-Power Fallback Hotspot"
+    password: "LNlJ7vT5Unzv"
+
+# Enable Web server
+web_server:
+  port: 80
+
+captive_portal:
+
+# Interval
+interval:
+  - interval: 250ms
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - switch.turn_on: LED
+        else:
+          - switch.turn_on: LED
+          - delay: 125ms
+          - switch.turn_off: LED
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "Connected SSID"
+    bssid:
+      name: "Connected BSSID"
+    mac_address:
+      name: "Mac Wifi Address"
+
+switch:
+  - platform: gpio
+    pin: GPIO1 
+    name: Relay1
+    id: relay1
+    inverted: yes
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    pin: GPIO3
+    name: Relay2
+    id: relay2
+    inverted: yes
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    pin: GPIO4
+    name: Relay3
+    id: relay3
+    inverted: yes
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    pin: GPIO14
+    name: Relay4
+    id: relay4
+    inverted: yes
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: gpio
+    pin: GPIO2
+    name: LED
+    id: LED
+    inverted: yes
+    restore_mode: RESTORE_DEFAULT_OFF
+
+sensor:
+  - platform: adc
+    pin: A0
+    id: antrieb_spannung
+    name: "Antrieb Strom"
+    update_interval: 0.1s
+
+  - platform: uptime
+    name: Uptime
+    id: uptime_sensor
+    update_interval: 1000ms
+
+  - platform: wifi_signal
+    name: "RSSI"
+    update_interval: 5s
+
+
+binary_sensor:
+  - platform: template
+    name: "Antrieb"
+    device_class: presence
+    lambda: |-
+      if (id(antrieb_spannung).state > 0.1) {
+        return true;
+      } else {
+        return false;
+      }  

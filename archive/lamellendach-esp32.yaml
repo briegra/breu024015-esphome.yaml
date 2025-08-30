@@ -1,0 +1,31 @@
+esphome:
+  name: lamellendach-esp32
+  friendly_name: Lamellendach ESP32
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "yQPkz/U4bBf3t/D81DqkrOk8RcKriACjJiP55M+nefs="
+
+ota:
+  password: "cfed7acc3281c4bc608031699cc524ef"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Lamellendach-Esp32"
+    password: "5IdI3XLWBILl"
+
+captive_portal:
+    

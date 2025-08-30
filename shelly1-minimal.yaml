@@ -1,0 +1,31 @@
+substitutions:
+  device_name: shelly1-minimal
+  friendly_name: Shelly1 Minimal
+  mqtt_prefix: shelly1-minimal
+  ap_fallback: shelly1-minimal SSID
+
+
+esphome:
+  name: ${device_name}
+  platform: ESP8266
+  board: esp01_1m
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Optional manual IP
+  manual_ip:
+    static_ip: 192.168.24.152
+    gateway: 192.168.24.1
+    subnet: 255.255.255.0     
+    dns1: 192.168.24.1  
+
+
+captive_portal:
+
+logger:
+
+ota:
+  platform: esphome
+  password: !secret ota_password

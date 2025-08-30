@@ -1,0 +1,467 @@
+esphome:
+  name: pergolux
+  friendly_name: Pergolux
+  includes:
+    - ap_name_mapper.h
+    - i2c.h
+    
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+  level: DEBUG
+  logs:
+    sensor: ERROR  
+    adc: WARN      
+    mqtt: DEBUG    
+    text_sensor: ERROR
+
+# Enable Home Assistant API
+#api:
+#  encryption:
+#    key: "rbmRAmvNueeCSUYZPddorXvP00d48gXUJoF2RwFL1J4="
+
+ota:
+  password: "8de4171f7e36e293ecc1fed07933f2fb"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Optional manual IP
+#  manual_ip:
+#    static_ip: 192.168.24.34
+#    gateway: 192.168.24.1
+#    subnet: 255.255.255.0  
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Pergolux Fallback Hotspot"
+    password: "PUAVjKK8gxY8"
+
+# Enable Web server
+web_server:
+  port: 80
+
+globals:
+  # Positionszähler
+  - id: positions_zaehler
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+  - id: position_endlage_auf
+    type: int
+    restore_value: true
+    initial_value: '280'  # Standardwert
+
+text_sensor:
+  - platform: wifi_info
+    ip_address: 
+      name: IPAddress
+      state_topic: "pergolux/text_sensor/ip_address"
+
+    bssid:
+      id: bssid_sensor  # ID für die BSSID
+      name: BSSID
+      state_topic: "pergolux/text_sensor/bssid"
+      
+    mac_address:
+      name: Mac
+      state_topic: "pergolux/text_sensor/MAC"
+
+  - platform: custom
+    lambda: |-
+      auto ap_name_sensor = new APNameTemplate();
+      ap_name_sensor->bssid_sensor = id(bssid_sensor);
+      App.register_component(ap_name_sensor);
+      return {ap_name_sensor};
+    text_sensors:
+      - name: "Access Point Name"
+        state_topic: "pergolux/text_sensor/access_point_name"
+
+  # Positionszähler
+  - platform: template
+    name: "Positionszähler"
+    lambda: |-
+      char buffer[10];
+      snprintf(buffer, sizeof(buffer), "%d", id(positions_zaehler));
+      return std::string(buffer);
+    update_interval: 1s
+    state_topic: "pergolux/text_sensor/positionszaehler"
+
+mqtt:
+  # MQTT-Basis-Konfiguration
+  broker: 192.168.24.15
+  port: 1887
+  username: ESPHome
+  password: KAQa(?#5hfY?n$_H
+  discovery: false
+#  discovery_retain: true
+
+#captive_portal:
+
+output:
+  - platform: gpio
+    pin: GPIO2
+    id: WiFi_led
+    inverted: yes
+
+switch:
+
+  - platform: restart
+    name: "ESP Neustart"
+    id: restart_switch
+
+  - platform: gpio
+    name: "Relais 1"
+    id: relay_1
+    pin: GPIO15
+    retain: false
+    state_topic: "pergolux/relay/relay_1/state"
+    command_topic: "pergolux/relay/relay_1/command"
+
+  - platform: gpio
+    name: "Relais 2"
+    id: relay_2
+    retain: false
+    pin: GPIO14
+    state_topic: "pergolux/relay/relay_2/state"
+    command_topic: "pergolux/relay/relay_2/command"
+
+  - platform: gpio
+    name: "Relais 3"
+    id: relay_3
+    retain: false
+    pin: GPIO12
+    state_topic: "pergolux/relay/relay_3/state"
+    command_topic: "pergolux/relay/relay_3/command"
+
+  - platform: gpio
+    name: "Relais 4"
+    id: relay_4
+    retain: false
+    pin: GPIO13
+    state_topic: "pergolux/relay/relay_4/state"
+    command_topic: "pergolux/relay/relay_4/command"
+
+  # Endlage: Lamellen Zu
+  - platform: template
+    name: "Endlage Lamellen Zu"
+    id: endlage_zu
+    optimistic: true
+    retain: true
+    state_topic: "pergolux/endlage_zu/state"
+    turn_on_action:
+      - lambda: |-
+          id(positions_zaehler) = 0;   
+
+  # Endlage: Lamellen Auf
+  - platform: template
+    name: "Endlage Lamellen Auf"
+    id: endlage_auf
+    optimistic: true
+    retain: true
+    state_topic: "pergolux/endlage_auf/state"    
+
+  # Lamelle schließen
+  - platform: template
+    name: "Lamelle schliessen"
+    id: lamelle_schliessen
+    optimistic: true
+    retain: true
+    state_topic: "pergolux/switch/lamelle_schliessen/state"
+    command_topic: "pergolux/switch/lamelle_schliessen/command"
+    
+    turn_off_action:
+      - switch.turn_off: relay_3
+      - switch.turn_off: relay_4
+
+    turn_on_action:
+      - if:
+          condition:
+              - switch.is_on: endlage_zu
+          then:
+            - delay: 750ms
+            - switch.turn_off: lamelle_schliessen
+          else:
+
+            - if:
+                condition:
+                  - switch.is_off: antrieb_ueberlast
+                  - switch.is_off: endlage_zu
+                then:
+                  - if:
+                      condition:
+                        - switch.is_on: relay_1
+                        - switch.is_on: relay_2
+                        - switch.is_on: lamelle_oeffnen
+                      then:
+                        - switch.turn_off: relay_1
+                        - switch.turn_off: relay_2
+                        - switch.turn_off: lamelle_oeffnen
+                        - delay: 250ms
+                  
+                  - switch.turn_on: relay_3
+                  - switch.turn_on: relay_4
+                  - lambda: |-
+                      calibrate_ina219();   
+
+                  # Warte 500 ms auf die Rückmeldung "Motor Ein"
+                  - delay: 500ms
+                  # Überprüfe, ob der Motor eingeschaltet wurde
+                  - if:
+                      condition:
+                        not:
+                          switch.is_on: motor_ein
+                      then:
+                      # Wenn der Motor nicht läuft:
+                      - switch.turn_on: endlage_zu
+                      - logger.log: "Motor nicht gestartet. Endlage Lamellen Zu gesetzt und Lamellen Schließen deaktiviert."                   
+                      - switch.turn_off: lamelle_schliessen
+                  - if:
+                      condition:
+                        switch.is_on: motor_ein
+                      then:
+                        - switch.turn_off: endlage_auf
+
+                else:
+                  - logger.log: "Antrieb Überlast aktiv, Lamelle schliessen wird nicht eingeschaltet!"
+
+  - platform: template
+    name: "Lamelle oeffnen"
+    id: lamelle_oeffnen
+    optimistic: true
+    retain: true
+    state_topic: "pergolux/switch/lamelle_oeffnen/state"
+    command_topic: "pergolux/switch/lamelle_oeffnen/command"
+    turn_off_action:
+      - switch.turn_off: relay_1
+      - switch.turn_off: relay_2
+
+    turn_on_action:
+      - if:
+          condition:
+              - switch.is_on: endlage_auf
+          then:
+            - delay: 750ms
+            - switch.turn_off: lamelle_oeffnen
+          else:
+            - if:
+                condition:
+                  - switch.is_off: antrieb_ueberlast
+                  - switch.is_off: endlage_auf
+                then:
+                  - if:
+                      condition:
+                        - switch.is_on: relay_3
+                        - switch.is_on: relay_4
+                        - switch.is_on: lamelle_schliessen
+                      then:
+                        - switch.turn_off: relay_3
+                        - switch.turn_off: relay_4
+                        - switch.turn_off: lamelle_schliessen
+                        - delay: 250ms
+                  
+                  - switch.turn_on: relay_1
+                  - switch.turn_on: relay_2
+
+                  - lambda: |-
+                      calibrate_ina219();    
+
+                  # Warte 500 ms auf die Rückmeldung "Motor Ein"
+                  - delay: 500ms
+                  # Überprüfe, ob der Motor eingeschaltet wurde
+                  - if:
+                      condition:
+                        not:
+                          switch.is_on: motor_ein
+                      then:
+                      # Wenn der Motor nicht läuft:
+                      - switch.turn_on: endlage_auf
+                      - logger.log: "Motor nicht gestartet. Endlage Lamellen Zu gesetzt und Lamellen Schließen deaktiviert."                   
+                      - switch.turn_off: lamelle_oeffnen
+                  - if:
+                      condition:
+                        switch.is_on: motor_ein
+                      then:
+                        - switch.turn_off: endlage_zu
+
+                else:
+                  - logger.log: "Antrieb Überlast aktiv, Lamelle öffnen wird nicht eingeschaltet!"
+
+  - platform: template
+    name: "Motor Ein"
+    id: motor_ein
+    optimistic: true
+    retain: false
+    state_topic: "pergolux/Motor/state"
+    turn_off_action:
+      - if:
+          condition:
+            - switch.is_on: lamelle_oeffnen
+          then:
+            - switch.turn_on: endlage_auf
+            - switch.turn_off: lamelle_oeffnen
+      - if:
+          condition:
+            - switch.is_on: lamelle_schliessen
+          then:
+            - switch.turn_on: endlage_zu
+            - switch.turn_off: lamelle_schliessen
+
+  - platform: template
+    name: "Lamelle stoppen"
+    id: lamelle_stoppen
+    optimistic: true
+    retain: false
+    state_topic: "pergolux/switch/lamelle_stoppen/state"
+    command_topic: "pergolux/switch/lamelle_stoppen/command"
+    turn_on_action:
+      - if:
+          condition:
+            - switch.is_on: relay_1
+          then:
+            - switch.turn_off: relay_1
+      - if:
+          condition:
+            - switch.is_on: relay_2
+          then:
+            - switch.turn_off: relay_2
+      - if:
+          condition:
+            - switch.is_on: relay_3
+          then:
+            - switch.turn_off: relay_3
+      - if:
+          condition:
+            - switch.is_on: relay_4
+          then:
+            - switch.turn_off: relay_4
+      - if:
+          condition:
+            - switch.is_on: lamelle_oeffnen
+          then:
+            - switch.turn_off: lamelle_oeffnen
+      - if:
+          condition:
+            - switch.is_on: lamelle_schliessen
+          then:
+            - switch.turn_off: lamelle_schliessen
+      - delay: 500ms
+      - if:
+          condition:
+            - switch.is_on: lamelle_stoppen
+          then:
+            - switch.turn_off: lamelle_stoppen
+
+  - platform: template
+    name: "Lamelle kalibrieren"
+    id: lamelle_kalibrieren
+    optimistic: true
+    retain: false
+    state_topic: "pergolux/switch/lamelle_kalibrieren/state"
+    command_topic: "pergolux/switch/lamelle_kalibrieren/command"
+
+  - platform: template
+    name: "Lamelle positionieren"
+    id: lamelle_positionieren
+    optimistic: true
+    retain: false
+    state_topic: "pergolux/switch/lamelle_positionieren/state"
+    command_topic: "pergolux/switch/lamelle_positionieren/command"
+
+  - platform: template
+    name: "Antrieb Ueberlast"
+    id: antrieb_ueberlast
+    optimistic: true
+    retain: false
+    state_topic: "pergolux/switch/antrieb_ueberlast/state"
+    command_topic: "pergolux/switch/antrieb_ueberlast/command"   
+
+i2c:
+  sda: GPIO4
+  scl: GPIO5
+  scan: true  # Optional: Aktiviert das Scannen der I2C-Geräte für Debugging
+
+sensor:
+  - platform: ina219
+    address: 0x40  # Standardadresse des INA219, passe sie an, falls nötig
+    shunt_resistance: 0.1  # Standard-Shunt-Widerstand (Ohm)
+    update_interval: 100ms
+
+    current:
+      name: "Strom (mA)"
+      unit_of_measurement: "mA"
+      accuracy_decimals: 4
+      state_topic: "pergolux/sensor/strom"
+      id: motor_strom
+      filters:
+        - sliding_window_moving_average:
+            window_size: 5  # Anzahl der Messwerte im Fenster
+            send_every: 2    # Aktualisiere bei jeder Messung
+      on_value:
+        - if:
+            condition:
+              lambda: |-
+                return (x > 0.001 && !id(motor_ein).state);
+            then:
+              - delay: 250ms
+              - switch.turn_on: motor_ein
+        - if:
+            condition:
+              lambda: |-
+                return (x <= 0.001 && id(motor_ein).state);
+            then:
+              - delay: 250ms
+              - switch.turn_off: motor_ein
+
+  # Uptime
+  - platform: uptime
+    name: Uptime
+    id: uptime_sensor
+    update_interval: 1000ms
+    state_topic: "pergolux/sensor/uptime"
+
+interval: 
+  # Positionszähler
+  - interval: 100ms
+    then:
+      - if:
+          condition:
+            # Prüfen, ob "Lamelle auf" und "Antrieb Ein" aktiv sind
+            and:
+              - switch.is_on: lamelle_oeffnen
+              - switch.is_on: motor_ein
+          then:
+            # Zähler hochzählen
+            - lambda: |-
+                id(positions_zaehler) += 1;
+      - if:
+          condition:
+            # Prüfen, ob "Lamelle zu" und "Antrieb Ein" aktiv sind
+            and:
+              - switch.is_on: lamelle_schliessen
+              - switch.is_on: motor_ein
+          then:
+            # Zähler herunterzählen
+            - lambda: |-
+                if (id(positions_zaehler) - 1  < 0) {
+                  id(positions_zaehler) = 0;
+                } else {
+                  id(positions_zaehler) -= 1;
+                } 
+
+  # Wifi Status
+  - interval: 250ms
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - output.turn_on: WiFi_led
+        else:
+          - output.turn_on: WiFi_led
+          - delay: 125ms
+          - output.turn_off: WiFi_led   

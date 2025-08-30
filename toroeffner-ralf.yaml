@@ -1,0 +1,656 @@
+esphome:
+  name: toroeffner-ralf
+  platform: ESP8266
+  board: d1_mini
+
+# Enable logging
+logger:
+  level: INFO
+
+# Enable Home Assistant API
+api:
+  password: "vlBpyX#7jSI5"
+  
+ota:
+  password: "vlBpyX#7jSI5"
+
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+  fast_connect: true
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "TorOeffner-Ralf"
+    password: "Ipg6xkQSsmlH"
+
+# Enable Web server
+web_server:
+  port: 80
+
+output:
+# Blue Led
+  - id: light_bl
+    platform: gpio
+    pin: 16
+# Green Led
+  - id: light_gr
+    platform: gpio
+    pin: 0
+# Red Led
+  - id: light_rd
+    platform: gpio
+    pin: 2
+
+switch:
+  - platform: gpio
+    name: "LED red"
+    pin: GPIO2
+    id: LED_rt
+    inverted: false
+
+  - platform: gpio
+    name: "LED green"
+    pin: GPIO0
+    id: LED_gn
+    inverted: false
+
+  - platform: gpio
+    name: "LED blue"
+    pin: GPIO16
+    id: LED_bl
+    inverted: false
+
+
+
+# MQTT-Konfiguration
+mqtt:
+  broker: "192.168.24.15"
+  port: "1883"
+  username: "mqtt"
+  password: "o8aFbiNGCZnnQWPsyKK1BXzLdYfNEDvT"
+  discovery: true
+  discovery_retain: true
+  on_message:
+    - topic: toroeffner-ralf/Handshake/Index
+      then:
+        - lambda: |-
+            id(my_integer_variable) = atoi(x.c_str());
+            ESP_LOGD("mqtt", "Integer Value Received: %d", id(my_integer_variable));
+
+# Legt die ID der Variablen fest, um sie später verwenden zu können
+globals:
+  - id: my_integer_variable
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+
+# Optional: Einfache Textsensor-Kombination, um die empfangene Nachricht zu überprüfen
+text_sensor:
+  - platform: mqtt_subscribe
+    name: "Index"
+    id: inex
+    topic: toroeffner-ralf/Handshake/Index
+    on_value:
+      then:
+        - lambda: |-
+            int y = atoi(x.c_str());
+            static const char* words[] = {
+                                          "m!wkGOr060OtIz:n%a3}6;4?4);O:OUw",
+                                          "AUd&>g@-_=LQp(BY}2QfX?F0`r51RJk(",
+                                          "&r6^PAMHT4Z%l@^,DJu1ULJLm`3gKxhJ",
+                                          "20bkGcM-@P?N>0D!Gc81?9_cz13J`3B:",
+                                          "p8u~Qe0C(,v2loC+*7q2=-lr87e{4*KX",
+                                          "WXR6pA:<nA,S#&)):ASt/R!RSw3KG=:`",
+                                          ":b:4VZZn^~VBxmlT./=k4392Ibv&6_k,",
+                                          ",YN[GF^*Uyb:zEz!i?8oxtd>,$a&E%|F",
+                                          "_e[*s;4fMG(=0k>ri~QuXe=@Dt%S;fF[",
+                                          "wjG/vH{1#PYC?WRH),qox+Afc^aCrdxZ",
+                                          "I{1HW&FiK^M6BT~7<QUK%b{[I0[~LH-8",
+                                          "={Xiy80!31ZmJnZad[iN~@oS3=BQrv>w",
+                                          "k9*zl=iYrWfdaosb+o9O,A,rID`({=6~",
+                                          "G<o+WMUG?<(TAH#/JI1uoZYW~5g0hJ;]",
+                                          "fHz<o/a4YF,9/j.(bOY2M&bF})AKsEz`",
+                                          "SZX/zaq~CWIzDFX&:[}FPuUBaj![_L0X",
+                                          "at}2{~rv.Tsjm1/<Hj()>dqhQjk?f%zm",
+                                          "2]C:GnIy|yrCj6sU#2EOT,NAi<7~?bf+",
+                                          "G23?kWE*tAIe2{Wg{pt4NrZ4mFY3lQ@L",
+                                          "Sr+lY/{k2v=m*tgpRqP$v[MMZj/Vu[Bm",
+                                          "=#NBl9=81KzB[8.,oRVDeCoESSjC~-6=",
+                                          "oJ1]c?dEoYoHQYwTS/Dyrxh)Dm2G[Ebe",
+                                          "3r%.xD!hqX<_u]WEo|B_><KZJmPvxW~5",
+                                          "~C.?0qHf0Dzz#eMuV2F73+I$.Jg?ZXJm",
+                                          "$Uw=)am>2r%G|?1~[o/Aqv=N1n9,9Dl,",
+                                          "SuH{cmWM2o&y6le/z|[EO1Yu2?+/.s;k",
+                                          "v5i]0dOD~2@#u]uM)}]Vok8=0Q#G>BT3",
+                                          "3%5ec6-FR~Vl![!zGWtXlY%&A}NO4(&A",
+                                          ";8Q%x;xd-biuy0[D4)6OgGGS|hjFuDI%",
+                                          "[vsg9&~{t]f`N!qpv<.o:_SutC7>?eAj",
+                                          "zQY5Lw!^~E^8}^zdqRr`Q7-62.*/e8X$",
+                                          "+Vg||`5]Nmxg-ukxn;F,KcHtU,Ni[V=Y",
+                                          "No8Z17GFnG|^+3pgN_7o-4lqm~&9*]$v",
+                                          "t^#U>x?&jUOix?f)[)lln`B31O`(b?%m",
+                                          "In8|I6eyEq0ewpwcCXKZ8c.;cW=^>bh1",
+                                          "t94YLQb5jrO3!&5*ZpSqq8Icr^4$Z}]L",
+                                          "y`|D|+z+{}0`Z;)zz;BbDI{4H>FKIqDl",
+                                          "9>tw!-J(6E?ub1Tx(_srC1#>Em=OSq9R",
+                                          "jcM6T=bw%OQ<;Q&ea?:UTZav[`(L4SaJ",
+                                          "Y7m4G856c8ZGdYv2,R57onf@o!eapscW",
+                                          "*A`A~3FI%]}xH1gkA.!XneD*^!3?R9Et",
+                                          "Wk/}7f+j`?/dbEsd,o[XULpcd0+>tbp0",
+                                          "pU7IR&1yM=SJCi$a}CImE97;;4^tAIp8",
+                                          "S3{!4I+Yl0(X@7DLhoN*:Mb$wH0%P^}0",
+                                          "^_ktUZ;H49nN;|Fo_I24riZRiHK2kAC6",
+                                          "V@XdzcTiJ8Nd%g*qh%D`N4T~<4<~)UO{",
+                                          "jgzgBgO!1R^<yg6*5]z_..OD858T+9B?",
+                                          "H6P.5TIDRr2:MOJne90id.G)k~@Oy&i-",
+                                          "}-mg^@Ld]uTH5(lw%`ulh;@#OO^s6QBt",
+                                          "0ulLQ!xz,_&Zl)FCqL$6(uX5NvZ_#.eo",
+                                          "K[C~sf$d[FWy0MGty%Nye9+RNR+/C*V;",
+                                          "LfE1}/@b/L:HMe|n,h%I$sX_Pf9;-Q~z",
+                                          "~AMnE!5}CDE|v4sqOIJZAlfmdf6&^<b7",
+                                          "R1aX;b`a5MZ)$p68HfNL1hgc(3jsg)[c",
+                                          "]T2.1^VSrDIF}mA6Xy&JPd*}lt[Uvp+T",
+                                          "?zQTF?W7wvX|IgP(zk6/{%GS+J3^*%1E",
+                                          "XH4m.Z;_nF/LqK>=;1[W^VLLE8V0kcs]",
+                                          "j|!Z]9mGFP@F.X$4Xd:^0$db|;-A}cqH",
+                                          "g3dNRHv*[}ydvgl2+jcSv^^l0k1X1xlg",
+                                          "_Ru;rYf5H]UMN^BA+tj)67T[v4L@J+#g",
+                                          "qG^g+8RkThED/aDC=MHLx;#)PF]FUHgB",
+                                          "*eoSpqS!.S:B6C0)bfcNS%4H[d](zmTh",
+                                          ".9qE^AE*`e6dT&Ds@E6wy7zE<ob@!SQN",
+                                          ">H_bS2hk0I*P|i^4XS3cU4QY7o()ifid",
+                                          "[{%8kLLK)4#3<jJOJ%UX6TWHbvC#;8P`",
+                                          "z=02M@_pi`&=Nr>`{{.6oLRqNzW$;+e*",
+                                          "fdo>{vp]NpeetzC?(S^;UF{-NX3Z1XR?",
+                                          "#Dj(6uzzPPSwwR~u|:^iQr6exy},(uOD",
+                                          "$1VZdO?={Gd:n)MAd$e_|Bca`2eD]8|p",
+                                          "hG|P]3j]9Z;*>Z]_(X~a?N)S#$mVN}:4",
+                                          "xbPuc$yUDB(yFg7Nouh5hHZPU2~W+.s^",
+                                          "bYhB*LO6lo4BCdU2`Qw#ZjtmijlSm$*g",
+                                          "5PmIzZ,ru%63T}.Y>,DbkHN}0sK#0ZS_",
+                                          "q!a{m%|d-3Oz#mg+E)Eya_&eG9L3:9Lu",
+                                          "NQ/UegOHa~w)M3o|%w[F0KqDs8(f#c2b",
+                                          "FhnQ)!qASX24l-[Dl$^Lv{v$VSp9GBtl",
+                                          "7tNyz2*f3@kuB@s2<gn-4sG[dWE{U2h4",
+                                          "5-c},~F?p|yO1yfv]1A)e}6L)Ox,Pwfk",
+                                          "!y|g;a:1rkp.XCU[rnR$^nTR;/G1i/;4",
+                                          "8%:xEANNe=*]++`ykf4q+cJd9kAmYzmX",
+                                          "yk.$=@vKAM}kE>f[fBwR?vh,fO8`{(X2",
+                                          "G$P?hqwVO?h3:WHzfvE`[P5Z^$wk<zPR",
+                                          "Z2MzKyhF)xjNHI=@bUoJ6SbrROVw!0a%",
+                                          "@X4<HDf:|f{etm)1W;oB&Ed3iivIgQov",
+                                          ",A`T;(M@w#]qtiS&x${$WH~J3V5,V[;.",
+                                          "a-.^^PJXCYimpMN>87;EH?n6m?k:(<MY",
+                                          "6NvGe|U]YYdRdZ>IMmBo2c`oay>$xe}&",
+                                          "D7-VZY2iwI`m,O$KKG6TlMqn49LAYtka",
+                                          "@i*^R4T<Uq4/yv(h[Of1C4Og;(=~)x73",
+                                          "DUHX>i,<!`Wo}h7Hq87TO}ENcxh_[S{g",
+                                          "B6vdUvw!pusoTP5r3W<am:k>yMikadM{",
+                                          "r//3>O09=&@UT]K7XQi5$xg8w(BA/r|%",
+                                          "OJO*B/%{Etb`gd2mE)7~gcJdU!eB*dcx",
+                                          "-@72hN+:Xs0KwVyQ:gO^y}M*1/?6i}0T",
+                                          ";*2QA^RyF@idC.$]tAqOYK*0|p#?KYO)",
+                                          "g-XJxk2d@Q1Eb@,1X&_>d,W3k94*8*Js",
+                                          "vm%UC;2KLj![yBEk|+C(MrOz!fNj%yp@",
+                                          "w<jjD2V:IpaahT`Fx~:H(ZNN[.PPgQW_",
+                                          "QG.^U.#SPF+,u-|Hk{=lTQ-:=8><:O3u",
+                                          ".%LeGiZ3R8uI_bqwhoeF`2SD#YqG>egi",
+                                          "$r,t>E9.BNq9S(Ed,KDIPx,PFMm6<n)L",
+                                          "pB0N`VXuQTF7=(SxWWcJX;7k=rXT@tPB",
+                                          "HK?vTp$`A?KH,7:p)Cs^h)JE;zs.6$7]",
+                                          "!M6]e9*9riNT|cfuNzD`+C:Uhz&Gh3)(",
+                                          ";A}J=KNn{IgU@okBQiuAOrgo~e`J0BvR",
+                                          ",)gieF%O(t>>p8@P~TBLo8oQ:Y7+M-uU",
+                                          "v2lpu^>~;_X|d{Q()(4`=v)m3}Z.pW;m",
+                                          "o#,:Kx2{3!@N=Ss9+x1phnPs~&VVk:`y",
+                                          "9}7@L};vt?YUKjM87{touj5y*/dD$TGL",
+                                          "fssT6sA6@f!y]{48v!};D>oN~aH;)3pf",
+                                          "<u:wi/Bs[h4Xd]5p#j;t.=]H:2wzG5(Z",
+                                          "1<G!Elf,d0vA1Wy.L7V7$18#Y!eGF$8@",
+                                          "TG[`Rs<ZTH&Sko[xX#7@3V!qo}L*NL1(",
+                                          "|Ye?EP93^R18J_@QvAr*kp4N)&.Z||nC",
+                                          "/baF?%-XMi|l1uR<Z?4W5.T?N2L+%JIm",
+                                          "n<-0j[~4J>z4|SM~tP@c~sV6wh?d2^uX",
+                                          "QSQz]2t99K^;gqm$RIq~n~o%.4&{+WZ)",
+                                          "cS+>WB3:#U?R7Bj6D;c:2*Q{4>5.Q@rb",
+                                          "6z)nkj@%Clh`}#uNPPFqQ$_RDz78ruM6",
+                                          "QKQpPf`|LVm~m)DZ8:h56G#H{#0]w5]+",
+                                          "E8)FJFBMioWP13wAKtjW~e.:9vb6wX{|",
+                                          ")XPtw7E;_3:%P/so>![/K3D*?iRyWybG",
+                                          "#J+inKpRu3W@C]0S_pTjUkAQDGjkA#p]",
+                                          "=q-e/ZVbXr^mG[}@YcdH#Zfx!FN+-%Rl",
+                                          "1oA-&EL~8eqcMyL5|_P0>w8<e=mY8-%N",
+                                          "0W<hSOqasm(WkmH?~2sd&8S-x>)i7~<z",
+                                          "az:ysPgvgrjUD}g0+*CO$?6V[@587B[@",
+                                          "Q<>Wy*3<x#G:lAWdJp-uy/bd>29CP1FO",
+                                          "^^dC.OFcX^oB.)CJa58N[M3#NDok:X>b",
+                                          "FyA%]Koxh:62.]u85O0E~3hlXX6sOK.:",
+                                          "+;w_%sb{G7!*-ETwS_jdT@MSLtjGav.N",
+                                          "RdQn)i^xKgm6FqR3=HL}3)Fs8,s!|x5]",
+                                          "/j9hHH$8]9<BUcFbe`rrCcl=&p:W8R@w",
+                                          "P/%?-cH,aA}WyWm8xPVEn8c0sv!b6{9Z",
+                                          "Fg%S8|(%W^*W6WKS(83<~r,wx#Wf}~mB",
+                                          "}6%Z^Lm.FVM:gY~+ClO32Q4i_e7%k|Tz",
+                                          "+-1j4E]l`L.Jxp;)}jZD}=nxX%^;leLo",
+                                          "VXS^)YLzK@k3pxQ!^jKmnrInw;9iVcqf",
+                                          "&5P%9R,`f0U_!}y09U!uQ82~d~v7rIZc",
+                                          "M(&/:hP/iviVw}nnZ@R<x7)_HIv<uZ*O",
+                                          "wRjqJTFrGko^R10B8n}c{pt-$Ve6?*D&",
+                                          "6Lg^%ga%<=6G9={wxS&*uvniOM3Z1=sI",
+                                          "IsJ9[E#R-X)f_B/&`AP7:ob4pBlmA[,@",
+                                          "RD~AXwo.~7f4[]cHn_+`l(:l)Mt5jnop",
+                                          "&P/J<!:Gu;R1BGdwwnqHP8y(Xf{j,p2y",
+                                          "F0]{+qUZku;L8GBDG^4W5O4;Zt`HIkA4",
+                                          "=%Jzt5{M#f)fqYXU^#<X8wp9sI!kW=uC",
+                                          "=HfUI*0GDQmB$OX&(eMV<`gKsgODO}5F",
+                                          "bcXPcukcwpWlBovkO4].ZCa;<yZL+AYs",
+                                          "z(4X]k/gAZj<&1SX]~zMc@bsujqoOu2(",
+                                          "_L!o#0QEVA<U/A(T|x,HjFo;E=!~?4_S",
+                                          "Vkb=j|6)a)}]&z]|SQ//2;An50Z^^#>C",
+                                          "6bC$rBv>[h(dQANZ3ep%=>4QK,w`RK&?",
+                                          "=BR{x>m3@rxF8(/[4C]Hr=+fIy3Lo!/5",
+                                          "!!+RT-|:eQf9]poTS!V`UwsW[.n?^FkM",
+                                          "BYB,n$Zb4WSj%?>Z1w7i}uKU*:J)DY<e",
+                                          ",gtRfR(xaW@t1-:de,:).w<>t?);(l5w",
+                                          "tc/R{`CB@UbI,7!o2bMc>jDpIwT/g+S)",
+                                          "*0eZ5.GD[/ro6d)_CxXFAZ&1Sh)LW/os",
+                                          "b`u[0jvxoE`D.Oo~Dq[j8f2s`z%.dG!~",
+                                          "#NUD8TAMM$|w$ui,dlSppYQ#+sz)PwND",
+                                          "X@#F|j4C;l|#7pf6l#z13vtEjKtk:XFe",
+                                          "AJ(dh<y6+gsVSv4dg~9cUEFDO8LOK?Kf",
+                                          "zzXwD#U`H1d`PWB%8QCe7(x(2=)D~d=R",
+                                          ">[}V;@q}&D5DJz8:AR,jL&#>6I}IN+:J",
+                                          "ylu#u36%A_USg,zliD/T|`*~BDf$duq#",
+                                          "n[Hs5d]eS(5qPWqCs_:Z,<W3KnHp+!Zg",
+                                          "XlT5%FhHKK#o1hz?wjK2]i+nCQj#xX{Z",
+                                          ";F@RAP5o&~Nq9*_!M^1{aw:@*^^-wQzf",
+                                          "9-@cl5jz@1[C?tNyS.9R10gN[F4&aXv+",
+                                          "w/5.ox_p(t&N->W)8L_Uy>^^TOFXskn8",
+                                          "*OH,JAHl>61,:gYhs[YVD^^}zvxPjIVO",
+                                          "m~aOz:R^)*6c:;l4U@.y2_BO8nH_/,2V",
+                                          "B/Gge+-V3,k@y0vy$ki~sweO0BIpBTZM",
+                                          "7k=;jHW=U[Ii}l-^h;q{_-dtDV#tB(M*",
+                                          "e~1)R{_lPq`#VrZY`aQs7#-:JArs*^u6",
+                                          "J:g1,zM+fTZSgLm#Ay^^XEhe90z6MLJ^",
+                                          "7ZQ:vBln~sh]8~V1GM<bHwI.9gZ+zEsN",
+                                          "c^TRd?,?!*l_Cb`eiT?+!K<{i29rswAc",
+                                          "}MrXD_JwIS[,g!,1W*6H0s4H!=Po#cGt",
+                                          "HRK%0T?7wLCy-|BUeK|9<G_?:#k}UPTa",
+                                          "}]f=.[a3Z*SPA)96v_3dw[!])>dXD$4/",
+                                          "^x%@A0J,UGwOfz1X<q@?vZ4(*9y[=$m3",
+                                          "[)c<gCrHC,.FsaaX%^_@Ltn9dVj164lL",
+                                          "sO|X<iata+gQ!&kDlZ!$J?F`YuLB(/Xs",
+                                          "64rSgrl;`XE$L0Rct.tfk&7ihFnKv^AS",
+                                          "T#d}KDj{4p>,~@_B#du#]nzRq$N1:31|",
+                                          "6XQrn+h@_?V?y:;XVlu>O/{;n`lbJXVI",
+                                          "JO)4SZM|rV9vuOW;j=jM+V,HODw>W215",
+                                          "a>Qn^`@-unsS]tyyR)lI^Q2gyL}rCn?m",
+                                          "5Fl)_aC%FR]x][L:={kqv=;Ya$[%cL(&",
+                                          "VOg{0%ob,iQk1KLe:!}:i+En(A`*odK}",
+                                          "TeZ;3/m-~%[~`68n=)DzCvJ=-?+z:9cZ",
+                                          "XRj9(9w76pxjV!:0&16,G.7o;1{@$Oxa",
+                                          "6#nqv@D]OkF4rvq3IVc3/-XKy`@0/HHj",
+                                          "V1J3)Py,+4|Hsjr#Js-g3Tc.CF2|Sah2",
+                                          "iIdI4aW1tcf0Kdn%Mfg9hD5j}nLe<n=t",
+                                          "lV:Q{VH:7$8]<i7Qvh|8.rs)5qZF=A$Y",
+                                          "+zjVc~iW_m6ZBdTM0]RuIRsFY+sqgk,h",
+                                          "sYuHbL:*nQ`xl/]D1/bRWWt+rAnMgSv4",
+                                          ".7L)W&~:5|v5NiGiQQ?kJj*7$!b|6K}$",
+                                          "v{Q>X|WBx>V)t6I+:qg-}&._[gl2n^O6",
+                                          "|sMw~&YtK}uF3o=KTktRQoDw+*;A|b^2",
+                                          "*znwb,KD>|1Y-lGbVm]|VqcD!9/u.SQo",
+                                          "3SL`xK@R^`-JEjt6.hy6A!6ab#&Cm?>E",
+                                          "x{]g8A(x=A)CkV,jGTyFbUK>*h-1jkP{",
+                                          "/g&SShwf>]ew@v^qBS+!i>%:Q|is2vV9",
+                                          "*H?H3vy+wYYWh-.Yj#9*_>v0`@SvNK=5",
+                                          "3pYT+e@0S#frt]]0+HBs&;u{Do:5:CG8",
+                                          "&$:KM<(o3ZVmwx[W%.d1IjAUOE~_VPn5",
+                                          "W?PPI%]@Jv00>%sx^pysY&QSm*#@oW!%",
+                                          "_oz5J|a!$*cTr,k1dG]$[6lZ)!K+F<y4",
+                                          "Z$PVMv/&KHXnxHa}]9%x[Lxt0`mj;s3L",
+                                          "pq?n4@Lv.Yne*Du!Dv5+PCq9tsg@U+N&",
+                                          "5@DOW}vRs1tTQ}r)H-L,r.WN$/Hs:TMY",
+                                          "Q-(iILOc7wtJOA_BzYR)4})kM0k@>I/O",
+                                          "Bhd`##]DB!fx7E6:D6){5Q>&aHZcK:I>",
+                                          "fOaZph,jWOh+A]-okLBs+a*J11_m|D5t",
+                                          "{x$>KWQxPUK%EK&jAS52QMsx%y[^bDiv",
+                                          "cy!:PH3mBLNUrHb8cVik3G-dX2TqH}0W",
+                                          "?Uk/6!d}3Z!oS<TD*6Ec01>0a/)AM8%>",
+                                          "]|-m]{.Nw`7;v:p`BlWQ?l,c:iO9sXqp",
+                                          "p_4VI+wS<2;7r.sj(2Nk6v(JzAJUykg9",
+                                          "zY=yJ]!3eck%K2[A<^dc7kCX050jx!m6",
+                                          "-}:P[;bSD_bbPX4m-|~0$ln|ko>bG@i)",
+                                          "e+w0dtrLj!zLgUZU~,}@C(aEc{|0JG1n",
+                                          "#}R/&eO1@KLmo%7ye}k*r@c5(dS4lI&d",
+                                          "I6e$}]}+.&YLcGf*zf:_S|Q3Z0SKeQ=8",
+                                          "S#(3xXiIEZzM/-opWae.(rEq-J/JcYh@",
+                                          "~3M+V)hO<0A8tbt=+l6V3`l8q|Q<?XcW",
+                                          "XA=oM9sgG~wjTs|A.::py2m&w;>mmukL",
+                                          "BZ|!k_^=3ed-VkS<wt.8_i[M|TvJR]0,",
+                                          "V]QUUNM_@Cx9#mB#1[PGs+q47ml4g`aJ",
+                                          ":C.byZS0G:#hp:cMQhf8Jpt#;v>Kkcew",
+                                          "8D[^?]3~oD{>Rls6C4=d~/aEu^_MHkD,",
+                                          "5gzey`y+q=a[yJ20JxIYy.qT!p,%*-p-",
+                                          "&/VaV!wViJ5;(E2a/];Ub:7EU79.zi8C",
+                                          "YAe<QOW>oayZPu9CC+Cs/T%b_4o^sDJ+",
+                                          "Ty5&dIxq^{#67X]wk.)RskChB%Jn$j<2",
+                                          "RUn~|_+CA7zd!~;P,;hvJ}7i}A&#|a&1",
+                                          "MiD7(Ok`ulcoa-^I1$c~hkxeq&-^))JZ",
+                                          "m(05z++m%|LB8YQ9GaH}nn=JQBRn=tA0",
+                                          "pJNt4CE7$v8:uUlr?7P6Jmd6vk*`NXS:",
+                                          "8>u[=0X[2fx6+<[(_DUyt(DB6U/I,tsV",
+                                          "F@^Bey4Bt[`f8oUgAYa[#LjUDA[l<w?h",
+                                          "xZ(.CTe@Xfm[F4rJ[4F}.N7]G8AYVUO_",
+                                          "eHHHYC+~4px,P)l0A8oB_im>[<S9yL2]",
+                                          ";@fh^){$z]0a>f]QRfF}dw2;Gm}VfU-X",
+                                          "eq<]ze9brK:1U;BP&u}(KYw|P`IkF|W1",
+                                          "hLnrgL@t~32)S:X7OQ!b%_7_Eup;+0*G",
+                                          ":cHWbzkf[ov5BP.c`?3%8rVd=gX,kNX5",
+                                          "r5xcyWVV0|R+to9[}{)%Aki=0lq$W0^m",
+                                          "-G@~cj9G8so^l]55@,yo`9T40|={3nR&",
+                                          "ZLF%vsAY,J1yT?Z;&g;b3w^RWTIJ3Y39",
+                                          "Jkc33-Vb]xju?Q<-5kA~Voe1R$6~SPwp",
+                                          "I;ub._FKzpfnGAXtjW8l8[qRP1>5c&aO",
+                                          "Oj}Buo_EBHt;/Brh+,oHJtS}:lN-R_kv",
+                                          "0.iJ]S/%M!-E]eB@[]Ig,<7D8YXOl~q]",
+                                          "a|i6&pgY#>aw:7nsrh&6F]Os)h_.)aI>",
+                                          "lqcB[42h54i_60Mu)LGOm{q[NQpZM{[u",
+                                          "$FLDxM$KK>r|Tr0L:.U1T4bY)V[o!^D$",
+                                          "-]c]/k`S>#fbc8pf1@%3ikllj>}0F0?H",
+                                          ")L,M{j[%^CBbr{&<wCk|QW;#^sx)4ge-",
+                                          "KO=Y0if[.f9+ziJsHw!{t>7/PI(LL/J^",
+                                          "QZtDw$<l~SchB(WlST*e-LH<;6m92J/E",
+                                          "|52A,?Qlx9%Y6`mauBwE-?>6_JVWs2r{",
+                                          "z$b#s6R]PT3OScSc=L,a/@x(%|lCv<Ep",
+                                          "!=#[iI.Eo4ppz`<~neb(6F1K0i<n@KM2",
+                                          "TA}G]W&y|gW7$<y{_>r3T$S2g3WUn!Uv",
+                                          "W^Su`;lPb0QQq-81pxq#+ci91:H4gC0x",
+                                          "jx^LUWp>R!$;es9hJB>8+,Q#C5zE2[LZ",
+                                          "QYQ]wS_L)Y*8pVYG:kj?y)XX;pXcixEx",
+                                          "}sW:v<hUTKEo86$SoU,+plj(M`Rq1M4|",
+                                          "7u64~q:1M;aZ|vOrnrYpVI8<[nyNKu.*",
+                                          "}L6~Gf!,>%uGyY07a`re!{H%qSm,ygf<",
+                                          "v6CU/@H#`tqW=1We3f[cSQP;hc%JLs2-",
+                                          "MOB&nnZLSN:mVhc.~nVAk!z>K-b/,UGn",
+                                          "%LC2pRWLv:=(#FtA?eLKf<)1=LOI&-+M",
+                                          "F]|4j^5{#$~m2vd_3YMoSImEdC#Tv9>:",
+                                          "1<J7!(vzJeG_KpO!J]eaC[^sRSjBsLF;",
+                                          "o4U9>bQ`A57h+Iokrh&7^|dYygpzQc%v",
+                                          "Ay$9}B5Q}C%EGZu-)9pn(+,VJ3o[Q:])",
+                                          "WQ8Do0.!ri{Na!S6:[xe$[.TCsaxOG$B",
+                                          "sUwnVM9HXfUZ@?e_/vzfSw847({f|#>(",
+                                          "B=Uo99rZr(hsA4?e2sS(N%[hn]zp?v5$",
+                                          "DnVk[_a9!gWZbw>]EImRY&n>jllDRJZ?",
+                                          "dKb[`~2@Y3gv&P#,#;D:blWM[#D5iL{S",
+                                          "ycj~V~q@(sv@V$^0dLzz`|4^S0)5Pq+,",
+                                          "?25+<9p&/ewI!z>f<?3;&cg+V,LHt0-S",
+                                          "NL1t7;~.;e4djAbXo7iSQkP]A1luvUFx",
+                                          "j}TVF?H(dnLrj.P?Jxo12[-7hR*O^`>W",
+                                          "5V)=3Pv]KG^oHQ|}WbFG]_qg#1r@dl>l",
+                                          "P?,pd1=e9EB:k0t!2^U@w]v8BawE`%[`",
+                                          "$)yKWlLOo9`~8WBhgO:0f[5Iyue]-Gk>",
+                                          "qdsk`24[*sJ[v],`<W-]`rYbg5)E4mSG",
+                                          "R}Y8a*W6a&t.68ciH{NMA1#o,Y|rvipr",
+                                          "=&K.W]6meV@d64(Tkq$*z3K[KIjv^Bp5",
+                                          "nEN]?Il~ZFzi_fO+XdgnCG2K_Rz([<76",
+                                          "loy[^x5m;p1wIqHT#+(f<$9.XMlr4u{U",
+                                          "`)(o.3>J1jJgjD2]fg1A*60u__JNX!5~",
+                                          "ZPNYR@WS#g>=55*I_>dp`=Z^UInj?zgJ",
+                                          "1HW=[S}VjU-q|4_vE]w:rLj%8=_OOB:2",
+                                          "hwk!=o<U8k_9jS-|Y{Ju#]uCU0LrQben",
+                                          "FL]g=l^^f5Yv:)^U]j.6:yxn0];adhz`",
+                                          "+t#^VF5bN:Lj981s[_m]>ab`$/mJ,`l[",
+                                          "y7(Q$,{015CN5is!5`s6P2!ewU718({~",
+                                          "`uYxM6L<iN,X`dGd!lYK6(kj1;d%=l3A",
+                                          "]-k>Xu8G[1?Wtjzn^k]u&^vLq/?g5H4.",
+                                          "amvjxVJ+SCw#`/qx(-;k/_JA=[ok(VeK",
+                                          "B(3h)3~oC&O,bX>Azc@MqV7Uu_N*-{{h",
+                                          "wb&D7hHrRnW!._KlP+RzXVekT9;GM>Dx",
+                                          "#;|cWmoAel$gtwpzy7F%fbj@zEEoor~,",
+                                          "hTb#8PS?mx@/VS$|oe8Hpd[<3TA!A&ye",
+                                          "E6rquHfb;vvX92L&i-o_wmfOAM&WZv4z",
+                                          "l0OirddlkLAhiQ3gT9Qn&VS=y9#X.$u,",
+                                          "6z#U7#0D`$nH2.h/x.C8{<wamXg+~7LU",
+                                          "n07A7cv;7),I`P*pZ^gaZWgsA+7!J;W&",
+                                          "h1!jVfn8yg~|8KfIKcV<`Iee?h8`Ov)u",
+                                          "b/1i51DQ~6.KE&JE5Cg^tJ__k2B(~m.K",
+                                          "}483#UQm9eo&S$KIWk;4IczR,>Y2Rqj8",
+                                          "!,[Qi<?-jrP/S&4`L+O+a.r5EA>}hD@x",
+                                          "Elh+I8|fU9_c:UKSHi-&^EfCAL4Jp/I?",
+                                          "s$1C+>,RzWt`8I3+6(|8A<1/0Q$S]{Qv",
+                                          "2jjyUPVb:SB>B%>&eC?6Q)PNm>-EE&S-",
+                                          ":/OIAoe]oa9(V&PsI(^d)zj)WUJm2;jP",
+                                          "`o0<Ol-_r5?Zn/sXkYOhokzfjo;-.E<u",
+                                          "Ix+yj`=xfN_Z=kE-PWWGzQL!8opXXRV/",
+                                          "NeH0-8<+?F-1,F8qKb3arSg^-:]Ne}HR",
+                                          "MCDA*SVYd6?R.1YxY.u014tbj@ph9Jha",
+                                          "$FVDoEu0plHozfy$).+`TZK_c~q]cVAa",
+                                          "c4Uiss?_WF,l@%)iiJB8<UC=9O+BP4fa",
+                                          "`Z&4VmjRdal:0yFzU^83y:ci=3=i<LJ+",
+                                          "&lCF([GJt;GR2wej7kg}6++_[A6RpkDZ",
+                                          "j]V.6#7fuv5zg~o)&WmrsCr>C4sBe<vR",
+                                          "n>%MA}(/it=-T!,AU?UcMh)}iM1/IXli",
+                                          "T)~-(=4nJRU3yqC/nN--T?$Rzd;tJ[f>",
+                                          "@W}#IVb|Tvk6h9>s%t<(Fe*uLP.c(lo6",
+                                          "ePfV{jxb@YUC=^Rj<6wBw{l,fxbZbtU7",
+                                          "t5(a2bE&|Wt~GjV%:D6z&2B>_Fw?X%OY",
+                                          ">X+Yo:2M02*1jD[!jhGFiBUM2c?[RXy-",
+                                          "#cxqv.0:V<%|xR.aX.b8jTu.nWW|*#6|",
+                                          "CQ[0eL1V4isH4T5uK_M#ukeMu]^;D%iC",
+                                          "c!Qa|jt#VW0*_EeeMww,^|`]E;^QG8p:",
+                                          "YY[5B-|]FVsrf`AA@B4A:ZwCJLJH6cg[",
+                                          "x5m`ol@OO4K7P[~.xSo2]Z=E.+J%02i(",
+                                          "_WGu]K60?rWRzl?,bRGv{%HjS_{EqLtM",
+                                          ":saXw)gNzyMG%jb,HXXhr$wRR2M-%oY~",
+                                          "ClU3H7Vjxo=+}^0kAtcR($08bsE24zmW",
+                                          "`t]Y]i7c#fx!^o<NsBIl[baeZEHq-XBd",
+                                          "3zGb|^TRI~0]ONNt>R8gU=L^Src4^@pW",
+                                          "2Uu*[X(vaic9bvkoj9f|3XjkS@uSkkn]",
+                                          "2Sl+xSbSu]1&Zr;AwgU?T0Z8HXN.oDG@",
+                                          "K$tBNTLt@QK.>@)S;rClZ~`$|RgVDEK#",
+                                          "&VV.ZRnxldAV2=s2a^>6HFg.8O-Qz_Z7",
+                                          "!`g>xd]Q->}n&?EVBpDz~t-T;q,k#8r)",
+                                          "Hf-Y_n1NX5^3]%M#9xqMX6_tzY:@S&hP",
+                                          "C~hTUX^)=Q[0IU/5@OGJNxsD>@3<PNOX",
+                                          "TU+i8ALH!12x|18`Afvme[WjK_zdH9w]",
+                                          "b4+c8qE,a(xWyA0+p4?we~&na`Q5GOq@",
+                                          "F;Z<(RadxbVlPj}bX;fOKQ&_{R/#_(x]",
+                                          "lI32L[dE,s]9C;dB6SkxoCUn/p2D@O,&",
+                                          "SC;b9CzamwICJPUeu9wV;jJBx706@[V`",
+                                          "{di*h*q;(8=!H{n[_Ku#-1O)7wDP}jtt",
+                                          "BhON|4u<$]KbfVs`Spmn5M#ZFq&7-A8k",
+                                          "DQU@^g`W~ujMh.zgh[Y~22NB1@:oOFs>",
+                                          "9&lbK<At>h/i}]oP,n9|xb8TK|L<LL^V",
+                                          "[@c@D^[+eo=`Yp0D&r:oK#zCdq:+d&dD",
+                                          "1K(ZmTzUv5C~DVKtENn^TO[@fP|hpoAp",
+                                          "e-KG!rsU!lj{/w?*Rr1pjPF`K?3gqz4l",
+                                          "KEPMt%B.A%P$PI_MK,6>MP_~Kz&p%e5W",
+                                          "0@:.o0kV,y_2-C+9ChLzJV.ke04aY8<-",
+                                          "f`E~o]10Sn!4XR.:Qo*ug(j@oRcGz/>m",
+                                          "<}JNto4t$7poa|n}_/BE1S&D.yaW$.5X",
+                                          "b2e<zquX8A_B&bC[B`jN$fBnLK_[|V|=",
+                                          "J<bjeoiY<WQM8V{j[I6_!NnM&uFAwF]7",
+                                          "oY@]Xinh^F!ihpsR-pzRaiMNnKp4|nb]",
+                                          "FiDPPYk;/Kz~AoP.:>`r%J?+18r0xwll",
+                                          "g>a=?K^/bUMZ_$]/b*M:06N[Hb$JCT<W",
+                                          "ke3Z;{j!hwRN]f/o75P+b1]=DE0-]hqw",
+                                          "BUmVmFklO37p],V.#y];+*6]Bn8n;r2J",
+                                          "K6nQwM[G]hK-g,eChmXt]LP_OEO|:qVV",
+                                          "`O382ZR(On[E2*3`;kGtCQq!/3aHFfhA",
+                                          "c-7J_+A*qF(GV0HeC[wLJl=%i<>i#{cY",
+                                          "xvn:jawV(=!M;*Mr,7i6Uxh/bUL1tGsX",
+                                          "PysK3>s8hPKI0i.`U#e:&SY}5=5[[ooW",
+                                          "+(xz$-mn:*C)8ZH$BP&h#,^hN2En>#s5",
+                                          "7:+/I-,O>UW8^|`lR$/%j;%^I|UMO-d1",
+                                          "s|@^%A6-/J3%!pL,$NUCznIs|,Y_pp$H",
+                                          "P]Ox(@v,U>)WYMZ9j5Udl]NMB4$,k5s4",
+                                          "=$eu%{Wq`_=BQ>}A!~*s}J3(44<?g|hX",
+                                          "eO0FrA^_54|u#a=41RZ[.5+z44ehX{7#",
+                                          "F}s;(37F:f%%LH@%3bn.>-PQ;X`o7E1#",
+                                          "Mzefs`iL!rT/`@8i{S[>(0uqFqs5Va4p",
+                                          "T&%GC%oeWQ7;Jn`e{q:z6.(C]{IWtvMD",
+                                          ".>Oz4QI0>c&!-w)f+6Fb*Z>HC%AB*}|5",
+                                          "L]MsLm$[klx`;JrK?M56_.v/1kap(-*7",
+                                          "&.$6jzZ/v+[6ly57d?=Q<vSVQC5>TCos",
+                                          "xnS%!%{NZjjI*Q7?v`k8j}j}olMxhkKm",
+                                          "KqzO4=VkjjaE#4]-m1kcc38|-OM#FK#X",
+                                          "r1lKt99Q[HHhZD!]P$zV{y,9d5Ex!>_U",
+                                          "g9Y%WdWM9H9l]>(hV>n2FF-l018ZIvK#",
+                                          "pthNPOeQ1mhgkI*k/L~$dzXq|~Tv78f$",
+                                          "<2[sj;/ja>M+wf3}Z]Z}dy[kz.uh%ubY",
+                                          "[+)B^[x5w7)3z~,KdS-M<er~,Q@2Ji+{",
+                                          "ux.Mhixsx55O/$C6gwk8)~s>&0:(2u@.",
+                                          "s0XGUvH?VIn?uhm3LQsrFQZh4M65u,6>",
+                                          "WFKHiMMIf=qO8DV&uhW#L^B*hKC<MYeR",
+                                          "InfC)jhk#.4a%*S}:bz]3^;}/Rj20;md",
+                                          "2!|~i~[.oYrhPmH;Nnhw!1yN$<-`i@Nv",
+                                          "`Y#@h-wXwQBQB;pZ{NZ8|[KE6+Bk2CQu",
+                                          "b7%/&#L*+ES.a{Pzh`A1~Na=Z5Re~nm/",
+                                          "RtFwuCs_icdGRzW;QP#Oc9xb.>JD(Mo=",
+                                          "CKlWvVbbnzM4ZGgk?/chR@;i=D:M$x~Z",
+                                          "(7D3>~tKFa*B-m3{@$}J2MsxKyeby}=h",
+                                          "!D*B3{W>Vp~Gt|W*hHR}jEFQ*;Ce<&]-",
+                                          "u3i6[~[%}vSW>{Igv{98b6DMLc(@0:~z",
+                                          "0bv?)4q%0ppTfUmbB}b3mhQUm<`pyH#a",
+                                          "yAg)vMpw{vgW&I#%lN;;QX@c4YZy!qJM",
+                                          "3gYCFyK3rn}CaH!RA]w]dQI>e3xKYo2=",
+                                          "zV%W`$2(!y1$v_|/V%2g.iHxdqA8y]{k",
+                                          "0ZpU`XT.{y42`%NKKw]PFZ$!b*yF__(r",
+                                          "$+N(~?r|NiOK[bv_?Pzj?2icVUvG^~&V",
+                                          "+:?>~#FRh$7Xg_NW8w$Uuvdry]B#]U9Z",
+                                          "V]]!;_tmL&|TMF$R=KO73$?7k8BtsQPc",
+                                          "oN?HzqbglaiZLHL@*8Zdl$Q^2*A~dBl>",
+                                          "yE/#9D[K<ml[t4:Mb(?AzaH]S)!U]&[s",
+                                          "tp2WBCe1Nk2$Psnk]%FD<u{O4w}((el1",
+                                          "Mk^bmgT4I<js;<h@B.E}y!zj%aMf(1t{",
+                                          "]Jo`}59qH5rDn_X?&W#~f)~:nrRkWSFH",
+                                          "%^2#^Z%68a~5X%c~Vg.oslKj}DF._6>c",
+                                          ";0+xF%n`A>u^bVR=GCILyJ5`]srGk?QL",
+                                          "II6_7.]h&7U8h;@q[nT:ijS.qQXC41sk",
+                                          "Ko:<~*Q4qm,Pk$WhL:Ms3g^q,`l_&So(",
+                                          "Bzt!&>D74`r#n6lK8W_njk*~gk1GFp%2",
+                                          "v,[QnzT(LKRJLK$?<#Gq!|b7Z$3z{4!j",
+                                          "P=Z2POvcEI6~r}@6K9x,t5Yhy9[t?MO~",
+                                          "IVB_9Q&hFl(/1w4G%##q:,RrT{Y{L:iM",
+                                          ";=;uWBftWrsuNUjRmd0I4B&MRP/kC08~",
+                                          ":wLWM(*8k>0xl?JfiNFAw;6>3&_/~TNg",
+                                          "n3;i&Lld$z8nn>B%UoQ_t7:sh/R|ve$e",
+                                          ".<seeTid(A;c;lDD38,JCWB=F+cmhazZ",
+                                          "&!t2^V</7DbosiqXI;W=-I?q_?H66UAq",
+                                          "&HGG}u6T%?;G-n*xT8p(;]pA~P.]F#Ta",
+                                          "~gU[6~F%B[%oLrkuxClZ=iO:i2sj~G?-",
+                                          ":UQ~;[*9v()+o~BtF~BSMN:DZdm1K/}%",
+                                          "*LtThw9W1`A4_iSY?G~B^xpl[Mc`!sW.",
+                                          "0)J~86k;GNi20>}rpF5sHBf:aNv0g+*F",
+                                          ";1?6u_2Ak}UvPjiAGoA@2opWL;+)&3Lm",
+                                          "Y+V{ABKzoD(!]VTI&8wteF/N(+kFh(5!",
+                                          "5DCr0J1vG^k`rv6SgsYS?r1<rZQ~[_oe",
+                                          "t]dhhKM&d`?-7O&_8{55$<PFj7mYu!PS",
+                                          "8B@K[&ZfT8.aByH8,zKo4NBz$gvQ.I}E",
+                                          "dHE1sL.]y6?wz)/zMg:vVV7Of1N7|CR#",
+                                          "o;;eycRkuz*UcCk{PX1~4gZHmb@=JA#Q",
+                                          "lUu=,R9M=Mao$ZvmZDwr%p3GFtZ8ZUc{",
+                                          "&U$qK,+y4Z&<[t,x1^(OVukfWYdn1.=L",
+                                          "Gz@TLe{H7J~hD7{V,Z*j-n4zO;I?rp?V",
+                                          "#^#%eLHB7n[vJbz>4H:e_nkCl{xtg!8C",
+                                          "OJ[TNYgt:JkTT=f~:ou1jr2<rgFZF~kx",
+                                          ":0(<{/K=ez|O+[2E)97:WA~]xn;Bt?E|",
+                                          "S5MbAULZthtW3<h)[8=x+F`UFND^|To2",
+                                          "r{-oJQEG;hD-1B^=tv=V2I_UVc~=Dog<",
+                                          ",<Er$xvGu?AKc_IWB6gtv,%ebzzWUrTc",
+                                          "tSB{SY9Tr9nY}]i/Fc#}23EHl#Kv=;i8",
+                                          "$ny}9j#JtEqdtme!~bc6gU+gFkouqN0p",
+                                          "T2#k3b?+%,ZQ[QzN$Jl<?iQqr>vos`IC",
+                                          "4yy2K;k3StDj|V%,`rf7tt40N8w5D#yr",
+                                          "4xEovfX}4zq*8?F2@DjHyDGyydY)`%5N",
+                                          "0RF.Q%+2]0vU9])$W6M%uh8;SX{6<TB1",
+                                          ";-b][DM^PXs3Q2-1T}9kWC;qKEMv`w;A",
+                                          "sMPW6YiN;jPR+ZauQl4M0?k83w=5?[n+",
+                                          "JGY9)d+Wb0svv93%NN6FD#/a6!#Eja,e",
+                                          "es%rSrrZYatGbTg;*Q;k+jRFm($ZtzZ?",
+                                          "b_B)Ob(;V}K<leL-.$Un?3t|$Lj5%mj`",
+                                          "=w,0N*%sJ/}U/7>14G|WTfV%Z&UV!6.d",
+                                          ">NGI_@StrRdJOmMAL6/@gl-q#M/mH(.,",
+                                          "o$?eS)^!|6|l|3(?68(J%wuR%bm89:+@",
+                                          "J?Lcz<QrFvENZve]f&*@VS)XX!)zTdCL",
+                                          "cT$,!JnogXa(xIP(q>3NPk8jq20hOX6%",
+                                          ":>vI_4p%d?ok!<R%HHt,us,Rq,2F!G/5",
+                                          "[,cEW2!af,y#S}M`^{T:LAFrKz3X3MqZ",
+                                          "V*MD%GBwiB!H*#ABO>Hn-FLXDaq~gcx`",
+                                          "#|4$MF73Y3$Z=anJw?7]XT5oyynsw^I7",
+                                          "(Fu}THTWPM>N&=BG>aQ#P${]eoGEC4V<",
+                                          "@;v_wO04vmrN;lP%L,.2OmSG[=DcNiuD",
+                                          "/r)VSY7,Q#xOCx5$.b>$4My7t|qT&QK$",
+                                          "/Pn86AzzA91u~Es*5YL`y>!m2!YzZ8UE",
+                                          "O.f8!6MR//@9&~A0zNf-W3LEj@9lP4(i",
+                                          "KM2F]E^V554MY&vM2=YS3&@j:xBXx_VY",
+                                          "G|s?snI/H|Stn|E-z9,|<aVtG.-XFGb[",
+                                          "YmQCaz,::Ju(@@yj;HDZ8;rgN`D6</ZR",
+                                          "Fm.=IMPd&ptv,gL{hm9Cxj~!XY%;kcY(",
+                                          "U~D!BrR.%@My[f*8QkPwBT^E3M|A2q&]",
+                                          "_i`,2^f)A(6fGhYp,?M;XMnUaa6mODVS",
+                                          "7(_E8-C/g{hz4Yxd!s4?ivaRR1Q7Mgo{",
+                                          "%z+UJe}Q,oUDg/xQ2gTAhUMFr}JTwa|B",
+                                          "r9G2cnPa>FD4WcZ~I*fQ)dD1L_r?S#}I",
+                                          "Hdxl0Xq5u(z1ua?&E,acO5{J3pR=sK#o",
+                                          "$lMn|TssuN?U~cf@nR8Hn+fxJE2%p%i;",
+                                          "oI5KB77o}P.mV=:Vuh_mrETb5#-AF=mf",
+                                          "8*>nB%C7]l+i~q>},x6vg!/:dc]U:2oi",
+                                          "l%!`kav>.|,+;/TG}R%>W#8H>Y?Qaqt,",
+                                          "<?8!C?^T!lFZd%o=vZ$ccP|pf,f9I|e@",
+                                          "6ksV3)%DyRO{Sd>fPY]67ke`Xv`Y_wqf",
+                                          "UM,$H+b[IOTC&w++FR+hQ#&5/vUQ[6g^",
+                                          "3Fi2L~IWR<#?>z7&,jDU#N/fIzeN?una",
+                                          "PhwoqNd;}@*2i4BtKf!yi~zFoQ^bCe,J",
+                                          "Fsa;fve5`f/uV=0cXqkm,hoic*$J#4+1",
+                                          "42rb?_EUh`m2r?QlYiPb}Ur4C+h+nwuf",
+                                          ".[_Rp1oFGlGhcHVu]3Trr//BjNpN4jS-",
+                                          "w2!n^Op*cL@>tNMnd.x--03.s}Dz0|b+",
+                                          "HP^``LmkyGN7@*=DmI9[1~1*Qv|v,XsM",
+                                          "C))Mxo4Ks;=Er0vwC<owD:R]9d3SY3.b"
+                                        };
+            id(password).publish_state(words[y]);
+
+
+  - platform: wifi_info
+    ip_address: 
+      name: IPAddress
+    ssid:
+      name: SSID
+    bssid:
+      name: BSSID
+    mac_address:
+      name: Mac   
+
+  - platform: template
+    name: "Password"
+    id: password
+
+      
+# Sensor
+sensor:
+- platform: uptime
+  name: Uptime
+  id: uptime_sensor
+  update_interval: 1000ms
+
+- platform: wifi_signal
+  name: "WiFi Signal Sensor"
+  update_interval: 5s
+
+
+# Interval
+interval:
+  - interval: 250ms
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - switch.turn_on: LED_gn
+        else:
+          - switch.turn_on: LED_bl
+          - delay: 125ms
+          - switch.turn_off: LED_bl

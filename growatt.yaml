@@ -1,0 +1,204 @@
+substitutions:
+  devicename: "growatt"
+  upper_devicename: "ESPHome Growatt 01"
+
+esphome:
+  name: $devicename
+  platform: ESP8266
+  board: esp07s
+
+# Enable logging
+logger:
+  baud_rate: 0
+
+# Enable Home Assistant API
+api:
+  password: "vlBpyX#7jSI5"
+
+ota:
+  password: "vlBpyX#7jSI5"
+  
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+  fast_connect: on
+  power_save_mode: none
+
+# Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Growatt 01 Fallback Hotspot"
+    password: "FZ58x_^Y@RVku@S+"
+    
+# Enable Web server
+web_server:
+  port: 80
+  
+captive_portal:
+
+time:
+- platform: homeassistant
+  id: homeassistant_time
+  
+output:
+# Blue Led
+- id: light_bl
+  platform: gpio
+  pin: 16
+# Green Led
+- id: light_gr
+  platform: gpio
+  pin: 0
+# Red Led
+- id: light_rd
+  platform: gpio
+  pin: 2
+  
+uart:
+  id: mod_bus
+  tx_pin: 1
+  rx_pin: 3
+  baud_rate: 115200
+
+modbus:
+  id: modbus1
+  uart_id: mod_bus
+  
+modbus_controller:
+- id: growatt
+  address: 0x01            ## the Modbus device addr
+  modbus_id: modbus1
+  setup_priority: -10
+  update_interval: 5s
+
+text_sensor:
+- platform: modbus_controller
+  name: "${devicename} Firmware Version"
+  address: 9
+  register_count: 3
+  register_type: holding
+  entity_category: diagnostic   #internal: true
+  
+- platform: modbus_controller
+  name: "${devicename} Serial Number"
+  address: 23
+  register_count: 5
+  register_type: holding
+  entity_category: diagnostic   #internal: true
+
+
+#number:
+#- platform: modbus_controller
+#  name: "${devicename} Max Output Power"
+#  address: 4
+#  value_type: U_WORD
+#  min_value: 0
+#  max_value: 100
+
+sensor:
+- platform: modbus_controller
+  name: "Battery charge status"
+  address: 1014
+  register_type: "read"
+  value_type: U_WORD
+  unit_of_measurement: '%'
+  
+- platform: modbus_controller
+  name: "Discharge power - current"
+  address: 1009
+  register_type: "read"
+  value_type: U_DWORD
+  unit_of_measurement: W
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+- platform: modbus_controller
+  name: "Charge power - current"
+  address: 1011
+  register_type: "read"
+  value_type: U_DWORD
+  unit_of_measurement: W
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+- platform: modbus_controller
+  name: "Battery Temperature"
+  address: 1040
+  register_type: "read"
+  value_type: U_WORD
+  unit_of_measurement: °
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+- platform: modbus_controller
+  name: "SP DSP Status Charge/Discharge"
+  address: 1041
+  register_type: "read"
+  value_type: U_WORD
+  
+- platform: modbus_controller
+  name: "Energy to grid - today"
+  address: 1048
+  register_type: "read"
+  value_type: U_DWORD
+  unit_of_measurement: kWh
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+- platform: modbus_controller
+  name: "Energy to grid - total"
+  address: 1050
+  register_type: "read"
+  value_type: U_DWORD
+  unit_of_measurement: kWh
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+- platform: modbus_controller
+  name: "Discharge energy1 - today"
+  address: 1052
+  register_type: "read"
+  value_type: U_DWORD
+  unit_of_measurement: kWh
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+- platform: modbus_controller
+  name: "Discharge energy1 - total"
+  address: 1054
+  register_type: "read"
+  value_type: U_DWORD
+  unit_of_measurement: kWh
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+- platform: modbus_controller
+  name: "Charge energy1 - today"
+  address: 1056
+  register_type: "read"
+  value_type: U_DWORD
+  unit_of_measurement: kWh
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+- platform: modbus_controller
+  name: "Charge energy1 - total"
+  address: 1058
+  register_type: "read"
+  value_type: U_DWORD
+  unit_of_measurement: kWh
+  accuracy_decimals: 1
+  filters:
+  - multiply: 0.1
+
+#Wifi SignalstÃ¤rke
+- platform: wifi_signal
+  name: "WiFi Signal Sensor"
+  update_interval: 60s

@@ -1,0 +1,251 @@
+substitutions:
+  devicename: "sompex_pin_wohnzimmer"
+  friendly_name: "Sompex Pin Wohnzimmer"
+  mqtt_prefix: "sompex_pin_wohnzimmer"
+
+esphome:
+  name: sompex-pin
+  friendly_name: Sompex Pin
+  includes:
+    - ap_name_mapper.h
+
+esp8266:
+  board: esp_wroom_02
+
+# Enable logging
+logger:
+  level: WARN
+  logs:
+    sensor: ERROR
+    adc: WARN
+    mqtt: WARN
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  password: !secret ota_password
+#ota:
+#  password: "7e73851cccaf462f3094bc7165da8740"
+
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Sompex-Pin Fallback Hotspot"
+    password: "ucyOp80V9ibY"
+
+  # Optional manual IP
+#  manual_ip:
+#    static_ip: 192.168.24.64
+#    gateway: 192.168.24.1
+#    subnet: 255.255.255.0    
+
+# Enable Web server
+web_server:
+  port: 80
+
+# MQTT-Basis-Konfiguration
+mqtt:
+  topic_prefix: "${devicename}"
+  discovery: false
+  broker: 192.168.24.15
+  id: mqtt_client
+  port: 1887
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+
+# SNTP
+time:
+  - platform: sntp
+    id: system_time
+    servers: time.myrbr.lcl
+    timezone: Europe/Berlin
+    on_time_sync:
+      then:
+        - logger.log: "SNTP-Zeit synchronisiert!"
+        - component.update: last_boot_time_sensor  
+
+
+############################################################################################################################################
+# switch
+############################################################################################################################################
+
+switch:
+  ###################################################
+  # Taster
+  ###################################################
+  - platform: gpio
+    id: gpio_sompex_taster
+    pin: GPIO4
+    restore_mode: ALWAYS_OFF
+#    internal: true
+#    retain: true
+#    disabled_by_default: true
+    on_turn_on:
+      - delay: 500ms
+      - switch.turn_off: gpio_sompex_taster
+
+  - platform: template
+    name: "Remote Taster"
+    id: remote_taster
+    optimistic: true
+    disabled_by_default: true
+    turn_on_action:
+      - switch.turn_on: gpio_sompex_taster
+    turn_off_action:
+      - switch.turn_off: gpio_sompex_taster
+
+############################################################################################################################################
+sensor:
+############################################################################################################################################
+     
+  - platform: adc
+    pin: GPIO17 
+    name: "Spannung IN1"
+    update_interval: 500ms
+    filters:
+      - multiply: 9.09
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+
+  # WiFi Signalstärke
+  - platform: wifi_signal
+    name: "WiFi-RSSI"
+    update_interval: 60s
+    state_topic: "${mqtt_prefix}/WiFi/RSSI"        
+
+  # Restart Counter
+  - platform: template
+    name: "ESP32 Restart Counter"
+    id: restart_counter_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/ESP32/restart/counter"
+
+  # Uptime
+  - platform: uptime
+    name: "Uptime"
+    id: esp_uptime
+    update_interval: 1000ms
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            int seconds = (int) id(esp_uptime).state;
+            int days = seconds / 86400;
+            seconds = seconds % 86400;
+            int hours = seconds / 3600;
+            seconds = seconds % 3600;
+            int minutes = seconds / 60;
+            seconds = seconds % 60;
+            char buffer[32];
+            sprintf(buffer, "%d Tage %02d:%02d:%02d", days, hours, minutes, seconds);
+            id(uptime_string).publish_state(buffer);
+
+########################################################################################################################
+text_sensor:
+############################################################################################################################################
+
+# Wifi Info
+  - platform: wifi_info
+    ip_address: 
+      name: WiFi-IPAddress
+      state_topic: "${mqtt_prefix}/WiFi/IPAddress"
+      on_value:
+        then:
+          - lambda: 'ESP_LOGE("wifi", "IP-Adresse: %s", x.c_str());'      
+
+    ssid:
+      id: ssid
+      name: WiFi-SSID
+      state_topic: "${mqtt_prefix}/WiFi/SSID"
+
+    bssid:
+      id: bssid_sensor  # ID für die BSSID
+      name: WiFi-BSSID
+      state_topic: "${mqtt_prefix}/WiFi/BSSID"
+      
+    mac_address:
+      name: WiFi-MacAddress
+      state_topic: "${mqtt_prefix}/WiFi/MAC"
+
+  - platform: custom
+    lambda: |-
+      auto ap_name_sensor = new APNameTemplate();
+      ap_name_sensor->bssid_sensor = id(bssid_sensor);
+      App.register_component(ap_name_sensor);
+      return {ap_name_sensor};
+
+    text_sensors:
+      - name: "WiFi-Access Point Name"
+        id: ap_name_sensor
+        disabled_by_default: true     
+        on_value:
+          then:
+            - mqtt.publish:
+                topic: "${mqtt_prefix}/WiFi/AP_Name"
+                payload: !lambda 'return id(ap_name_sensor).state;'      
+
+# Last Reboot Time
+  - platform: template
+    name: "ESP Restart Time"
+    id: last_boot_time_sensor
+    icon: "mdi:clock"
+    update_interval: never  # Berechnung nur bei SNTP-Sync
+    state_topic: "${mqtt_prefix}/ESP32/restart/time"
+    lambda: |-
+      if (!id(system_time).now().is_valid()) {
+        return {"Warte auf SNTP..."};
+      }
+
+      auto now = id(system_time).now();
+      auto boot_timestamp = now.timestamp - (int) id(esp_uptime).state; // Uptime abziehen
+      auto boot_time = esphome::ESPTime::from_epoch_local(boot_timestamp);
+
+      char str[25];  // 🔹 Mehr Platz als nötig, um jede Ausgabe sicher aufzunehmen
+      snprintf(str, sizeof(str), "%02u.%02u.%02u %02u:%02u:%02u",
+               (unsigned int) boot_time.day_of_month, 
+               (unsigned int) boot_time.month, 
+               (unsigned int) (boot_time.year % 100),
+               (unsigned int) boot_time.hour, 
+               (unsigned int) boot_time.minute, 
+               (unsigned int) boot_time.second);
+      return {str};
+
+  - platform: template
+    name: "ESP Uptime Formatted"
+    id: uptime_string
+    state_topic: "${mqtt_prefix}/ESP32/uptime"
+
+############################################################################################################################################
+output:
+############################################################################################################################################
+
+  - platform: gpio
+    pin: GPIO0
+    id: WiFi_led
+    inverted: yes
+
+############################################################################################################################################
+interval:
+############################################################################################################################################
+
+# Wifi Status
+  - interval: 500ms
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - output.turn_on: WiFi_led
+        else:
+          - output.turn_on: WiFi_led
+          - delay: 125ms
+          - output.turn_off: WiFi_led   
+
+

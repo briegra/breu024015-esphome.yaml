@@ -1,0 +1,1201 @@
+substitutions:
+  devicename: "pergolux-esp32"
+  friendly_name: "Pergolux Lamellensteuerung"
+  mqtt_prefix: "pergolux"
+
+esphome:
+  name: "${devicename}"
+  friendly_name: "${friendly_name}"
+  includes:
+    - ap_name_mapper.h
+    - loop_time_sensor.h
+
+  on_boot:
+    priority: 600  # Höhere Priorität stellt sicher, dass dies früh passiert
+    then:    
+      - delay: 10s
+      - lambda: |-  
+          id(restart_esp).turn_off();
+          id(restart_counter)++; // Restart Counter      
+          id(restart_counter_sensor).publish_state(id(restart_counter));
+          id(soll_favorit_max_sensor).publish_state(id(soll_favorit_max));
+          id(soll_favorit_0_sensor).publish_state(id(soll_favorit_0));
+          id(soll_favorit_1_sensor).publish_state(id(soll_favorit_1));
+          id(soll_favorit_2_sensor).publish_state(id(soll_favorit_2));
+          id(soll_favorit_3_sensor).publish_state(id(soll_favorit_3));
+          id(aktuelle_position) = id(stored_position);    // aktuelle Position
+          id(endlage_min).state = id(stored_endlage_min); // endlage Min
+          id(in_pos_favorit_0).state = id(stored_in_pos_favorit_0); // endlage Favorit 0
+          id(in_pos_favorit_1).state = id(stored_in_pos_favorit_1); // endlage Favorit 1
+          id(in_pos_favorit_2).state = id(stored_in_pos_favorit_2); // endlage Favorit 2
+          id(in_pos_favorit_3).state = id(stored_in_pos_favorit_3); // endlage Favorit 3
+          id(endlage_max).state = id(stored_endlage_max); // endlage Max
+          id(esp_init_erfolgt) = true;  // Markiere, dass Initialisierung abgeschlossen ist.
+          ESP_LOGE("BOOT", "Init abgeschlossen");
+
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: WARN
+  logs:
+    sensor: ERROR  
+    adc: WARN      
+    mqtt: WARN    
+    text_sensor: WARN
+
+ota:
+  password: "6da3b19a6645d31de7652ab43dfaafd4"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Pergolux Fallback Hotspot"
+    password: "eB7ozI0TOJsj"
+
+# Enable Web server
+web_server:
+  port: 80
+
+# MQTT-Basis-Konfiguration
+mqtt:
+  topic_prefix: "${devicename}"
+  discovery: false
+  broker: 192.168.24.15
+  id: mqtt_client
+  port: 1887
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+
+  on_message:
+      - topic: "${mqtt_prefix}/Lamelle/soll_favorit_0"
+        then:
+          - lambda: |-
+              if(id(esp_init_erfolgt)){
+                float wert = atof(x.c_str());
+                id(soll_favorit_0_sensor).publish_state(wert);    
+              }
+
+      - topic: "${mqtt_prefix}/Lamelle/soll_favorit_1"
+        then:
+          - lambda: |-
+              if(id(esp_init_erfolgt)){
+                float wert = atof(x.c_str());
+                id(soll_favorit_1_sensor).publish_state(wert);    
+              }
+      - topic: "${mqtt_prefix}/Lamelle/soll_favorit_2"
+        then:
+          - lambda: |-
+              if(id(esp_init_erfolgt)){
+                float wert = atof(x.c_str());
+                id(soll_favorit_2_sensor).publish_state(wert);    
+              }
+      - topic: "${mqtt_prefix}/Lamelle/soll_favorit_3"
+        then:
+          - lambda: |-
+              if(id(esp_init_erfolgt)){
+                float wert = atof(x.c_str());
+                id(soll_favorit_3_sensor).publish_state(wert);    
+              }
+      - topic: "${mqtt_prefix}/Lamelle/soll_favorit_max"
+        then:
+          - lambda: |-
+              if(id(esp_init_erfolgt)){
+                float wert = atof(x.c_str());
+                id(soll_favorit_max_sensor).publish_state(wert);    
+              }
+
+time:
+  - platform: sntp
+    id: system_time
+    servers: time.myrbr.lcl
+    timezone: Europe/Berlin
+    on_time_sync:
+      then:
+        - logger.log: "SNTP-Zeit synchronisiert!"
+        - component.update: last_boot_time_sensor    
+
+globals:
+# Flag für ESP Initialisierung erfolgt
+  - id: esp_init_erfolgt
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+# Reboot counter
+  - id: restart_counter
+    type: int
+    restore_value: true
+    initial_value: "0"    
+
+# Endlage Min speichern
+  - id: stored_endlage_min
+    type: bool
+    restore_value: true
+    initial_value: "false"
+
+# Favorit 0 in position speichern
+  - id: stored_in_pos_favorit_0
+    type: bool
+    restore_value: true
+    initial_value: "false"
+
+# Favorit 1 in position speichern
+  - id: stored_in_pos_favorit_1
+    type: bool
+    restore_value: true
+    initial_value: "false"
+
+# Favorit 2 in position speichern
+  - id: stored_in_pos_favorit_2
+    type: bool
+    restore_value: true
+    initial_value: "false"
+
+# Favorit 3 in position speichern
+  - id: stored_in_pos_favorit_3
+    type: bool
+    restore_value: true
+    initial_value: "false"
+
+# Endlage Max speichern
+  - id: stored_endlage_max
+    type: bool
+    restore_value: true
+    initial_value: "false"
+
+# Aktuelle Position speichern
+  - id: stored_position
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+# Flag für Init Position
+  - id: init_position
+    type: bool
+    restore_value: false
+    initial_value: "false"  
+
+# Aktuelle Position
+  - id: aktuelle_position
+    type: int
+    restore_value: false
+    initial_value: "0"
+
+  - id: soll_favorit_0
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+  - id: soll_favorit_1
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+  - id: soll_favorit_2
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+  - id: soll_favorit_3
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+  - id: soll_favorit_max
+    type: int
+    restore_value: true
+    initial_value: "274"
+
+
+########################################################################################################################
+text_sensor:
+############################################################################################################################################
+
+# Last Reboot Time
+  - platform: template
+    name: "ESP Restart Time"
+    id: last_boot_time_sensor
+    icon: "mdi:clock"
+    update_interval: never  # Berechnung nur bei SNTP-Sync
+    state_topic: "${mqtt_prefix}/ESP32/restart/time"
+    lambda: |-
+      if (!id(system_time).now().is_valid()) {
+        return {"Warte auf SNTP..."};
+      }
+
+      auto now = id(system_time).now();
+      auto boot_timestamp = now.timestamp - (int) id(esp_uptime).state; // Uptime abziehen
+      auto boot_time = esphome::ESPTime::from_epoch_local(boot_timestamp);
+
+      char str[25];  // 🔹 Mehr Platz als nötig, um jede Ausgabe sicher aufzunehmen
+      snprintf(str, sizeof(str), "%02u.%02u.%02u %02u:%02u:%02u",
+               (unsigned int) boot_time.day_of_month, 
+               (unsigned int) boot_time.month, 
+               (unsigned int) (boot_time.year % 100),
+               (unsigned int) boot_time.hour, 
+               (unsigned int) boot_time.minute, 
+               (unsigned int) boot_time.second);
+      return {str};
+
+  - platform: template
+    name: "ESP Uptime Formatted"
+    id: uptime_string
+    state_topic: "${mqtt_prefix}/ESP32/uptime"
+
+# Wifi Info
+  - platform: wifi_info
+    ip_address: 
+      name: WiFi-IPAddress
+      state_topic: "${mqtt_prefix}/WiFi/IPAddress"
+      on_value:
+        then:
+          - lambda: 'ESP_LOGE("wifi", "IP-Adresse: %s", x.c_str());'      
+
+    ssid:
+      id: ssid
+      name: WiFi-SSID
+      state_topic: "${mqtt_prefix}/WiFi/SSID"
+
+    bssid:
+      id: bssid_sensor  # ID für die BSSID
+      name: WiFi-BSSID
+      state_topic: "${mqtt_prefix}/WiFi/BSSID"
+      
+    mac_address:
+      name: WiFi-MacAddress
+      state_topic: "${mqtt_prefix}/WiFi/MAC"
+
+  - platform: custom
+    lambda: |-
+      auto ap_name_sensor = new APNameTemplate();
+      ap_name_sensor->bssid_sensor = id(bssid_sensor);
+      App.register_component(ap_name_sensor);
+      return {ap_name_sensor};
+    text_sensors:
+      - name: "WiFi-Access Point Name"
+        id: ap_name_sensor
+        internal: true        
+        on_value:
+          then:
+            - mqtt.publish:
+                topic: "${mqtt_prefix}/WiFi/AP_Name"
+                payload: !lambda 'return id(ap_name_sensor).state;'      
+
+############################################################################################################################################
+output:
+############################################################################################################################################
+
+  - platform: gpio
+    pin: GPIO5
+    id: WiFi_led
+    inverted: yes
+
+############################################################################################################################################
+button:
+############################################################################################################################################
+
+#  - platform: restart
+#    name: "ESP Neustart"    
+
+############################################################################################################################################
+switch:
+############################################################################################################################################
+
+# Restart ESP
+  - platform: template
+    name: "ESP Restart"
+    id: restart_esp
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/ESP32/restart/state"
+    command_topic: "${mqtt_prefix}/ESP32/restart/command"
+    turn_on_action:
+      - delay: 500ms
+      - lambda: |
+          ESP_LOGE("Switch", "ESP wird jetzt neugestartet...");      
+          ESP.restart();
+
+
+# Position Endlage Min
+  - platform: template
+    name: "Endlage Lamellen Min"
+    id: endlage_min
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/Lamelle/endlage_min/state"
+    command_topic: "${mqtt_prefix}/Lamelle/endlage_min/command"
+
+    turn_on_action:
+      - lambda: |-
+          if (id(esp_init_erfolgt)) {  // Nur wenn Initialisierung abgeschlossen ist!
+            id(stored_endlage_min) = true;
+            global_preferences->sync();
+            ESP_LOGI("FLASH", "Endlage Min auf EIN gespeichert.");
+          }
+
+    turn_off_action:
+      - lambda: |-
+          if (id(esp_init_erfolgt)) {  // Nur wenn Initialisierung abgeschlossen ist!
+            id(stored_endlage_min) = false;
+            global_preferences->sync();
+            ESP_LOGI("FLASH", "Endlage Min auf AUS gespeichert.");
+          }
+
+# In Position Favorit Position_0
+  - platform: template
+    name: "Lamelle in Position Favorit 0"
+    id: in_pos_favorit_0
+    optimistic: true
+    retain: true
+    state_topic:   "${mqtt_prefix}/Lamelle/in_pos_favorit_0/state"
+    command_topic:   "${mqtt_prefix}/Lamelle/in_pos_favorit_0/command"
+
+    turn_on_action:
+      - lambda: |-
+          if (id(esp_init_erfolgt)) {                                         // Nur wenn Initialisierung abgeschlossen ist!
+            ESP_LOGE("FLASH", "########### Position Favorit 0 turn_on_action.");
+            static bool last_state = false;                                       // Merker für letzten Status
+            if (!last_state) {                                                    // Nur ausführen, wenn vorher Aus war
+              id(stored_in_pos_favorit_0) = true;
+              global_preferences->sync();
+              ESP_LOGE("FLASH", "######### Position Favorit 0 auf EIN gespeichert.");
+              last_state = true;
+            } else {
+              last_state = false;
+            }
+          }
+
+    turn_off_action:
+        - lambda: |-
+            if (id(esp_init_erfolgt)) {  // Nur wenn Initialisierung abgeschlossen ist!
+              ESP_LOGE("FLASH", "########### Position Favorit 0 turn_off_action.");
+              static bool last_state = true;  // Merker für letzten Status
+              if (last_state) {  // Nur ausführen, wenn vorher EIN war
+                id(stored_in_pos_favorit_0) = false;
+                global_preferences->sync();
+                ESP_LOGE("FLASH", "########### Position Favorit 0 auf AUS gespeichert.");
+                last_state = false;
+              } else {
+                last_state = true;
+              }
+            }
+
+            
+            
+# Favorit 0 positionieren
+  - platform: template
+    name: "Favorit 0 positionieren"
+    id: favorit_0_positionieren
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/Lamelle/favorit_0_positionieren/state"
+    command_topic: "${mqtt_prefix}/Lamelle/favorit_0_positionieren/command"
+    turn_on_action:
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - delay: 500ms
+            - switch.turn_off: favorit_0_positionieren
+
+      - if:
+          condition:
+            - lambda: "return id(soll_favorit_0) == id(aktuelle_position);"
+          then:
+            - delay: 500ms
+            - switch.turn_off: favorit_0_positionieren
+          else:
+            - if:
+                condition:
+                  - lambda: "return id(soll_favorit_0) < id(aktuelle_position);"
+                then:
+                  - switch.turn_on: lamelle_schliessen
+            - if:
+                condition:
+                  - lambda: "return id(soll_favorit_0) > id(aktuelle_position);"
+                then:
+                  - switch.turn_on: lamelle_oeffnen
+
+    turn_off_action:
+      - logger.log: "Schalter Favorit 0 positionieren aus"
+
+      
+############################ F A V O R I T   1 ##############################################
+
+# In Position Favorit Position_1
+  - platform: template
+    name: "Lamelle in Position Favorit 1"
+    id: in_pos_favorit_1
+    optimistic: true
+    retain: true
+    state_topic:   "${mqtt_prefix}/Lamelle/in_pos_favorit_1/state"
+    command_topic:   "${mqtt_prefix}/Lamelle/in_pos_favorit_1/command"
+
+    turn_on_action:
+      - lambda: |-
+          if (id(esp_init_erfolgt)) {                                         // Nur wenn Initialisierung abgeschlossen ist!
+            ESP_LOGE("FLASH", "########### Position Favorit 1 turn_on_action.");
+            static bool last_state = false;                                       // Merker für letzten Status
+            if (!last_state) {                                                    // Nur ausführen, wenn vorher Aus war
+              id(stored_in_pos_favorit_1) = true;
+              global_preferences->sync();
+              ESP_LOGE("FLASH", "######### Position Favorit 1 auf EIN gespeichert.");
+              last_state = true;
+            } else {
+              last_state = false;
+            }
+          }
+
+    turn_off_action:
+        - lambda: |-
+            if (id(esp_init_erfolgt)) {  // Nur wenn Initialisierung abgeschlossen ist!
+              ESP_LOGE("FLASH", "########### Position Favorit 1 turn_off_action.");
+              static bool last_state = true;  // Merker für letzten Status
+              if (last_state) {  // Nur ausführen, wenn vorher EIN war
+                id(stored_in_pos_favorit_1) = false;
+                global_preferences->sync();
+                ESP_LOGE("FLASH", "########### Position Favorit 1 auf AUS gespeichert.");
+                last_state = false;
+              } else {
+                last_state = true;
+              }
+            }
+
+# Favorit 1 positionieren
+  - platform: template
+    name: "Favorit 1 positionieren"
+    id: favorit_1_positionieren
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/Lamelle/favorit_1_positionieren/state"
+    command_topic: "${mqtt_prefix}/Lamelle/favorit_1_positionieren/command"
+    turn_on_action:
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - delay: 500ms
+            - switch.turn_off: favorit_1_positionieren
+
+      - if:
+          condition:
+            - lambda: "return id(soll_favorit_1) == id(aktuelle_position);"
+          then:
+            - delay: 500ms
+            - switch.turn_off: favorit_1_positionieren
+          else:
+            - if:
+                condition:
+                  - lambda: "return id(soll_favorit_1) < id(aktuelle_position);"
+                then:
+                  - switch.turn_on: lamelle_schliessen
+            - if:
+                condition:
+                  - lambda: "return id(soll_favorit_1) > id(aktuelle_position);"
+                then:
+                  - switch.turn_on: lamelle_oeffnen
+
+    turn_off_action:
+      - logger.log: "Schalter Favorit 1 positionieren aus"
+
+
+
+############################ F A V O R I T   2 ##############################################
+
+# In Position Favorit Position_2
+  - platform: template
+    name: "Lamelle in Position Favorit 2"
+    id: in_pos_favorit_2
+    optimistic: true
+    retain: true
+    state_topic:   "${mqtt_prefix}/Lamelle/in_pos_favorit_2/state"
+    command_topic:   "${mqtt_prefix}/Lamelle/in_pos_favorit_2/command"
+
+    turn_on_action:
+      - lambda: |-
+          if (id(esp_init_erfolgt)) {                                         // Nur wenn Initialisierung abgeschlossen ist!
+            ESP_LOGE("FLASH", "########### Position Favorit 2 turn_on_action.");
+            static bool last_state = false;                                       // Merker für letzten Status
+            if (!last_state) {                                                    // Nur ausführen, wenn vorher Aus war
+              id(stored_in_pos_favorit_2) = true;
+              global_preferences->sync();
+              ESP_LOGE("FLASH", "######### Position Favorit 2 auf EIN gespeichert.");
+              last_state = true;
+            } else {
+              last_state = false;
+            }
+          }
+
+    turn_off_action:
+        - lambda: |-
+            if (id(esp_init_erfolgt)) {  // Nur wenn Initialisierung abgeschlossen ist!
+              ESP_LOGE("FLASH", "########### Position Favorit 2 turn_off_action.");
+              static bool last_state = true;  // Merker für letzten Status
+              if (last_state) {  // Nur ausführen, wenn vorher EIN war
+                id(stored_in_pos_favorit_2) = false;
+                global_preferences->sync();
+                ESP_LOGE("FLASH", "########### Position Favorit 2 auf AUS gespeichert.");
+                last_state = false;
+              } else {
+                last_state = true;
+              }
+            }
+
+# Favorit 2 positionieren
+  - platform: template
+    name: "Favorit 2 positionieren"
+    id: favorit_2_positionieren
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/Lamelle/favorit_2_positionieren/state"
+    command_topic: "${mqtt_prefix}/Lamelle/favorit_2_positionieren/command"
+    turn_on_action:
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - delay: 500ms
+            - switch.turn_off: favorit_2_positionieren
+
+      - if:
+          condition:
+            - lambda: "return id(soll_favorit_2) == id(aktuelle_position);"
+          then:
+            - delay: 500ms
+            - switch.turn_off: favorit_2_positionieren
+          else:
+            - if:
+                condition:
+                  - lambda: "return id(soll_favorit_2) < id(aktuelle_position);"
+                then:
+                  - switch.turn_on: lamelle_schliessen
+            - if:
+                condition:
+                  - lambda: "return id(soll_favorit_2) > id(aktuelle_position);"
+                then:
+                  - switch.turn_on: lamelle_oeffnen
+
+    turn_off_action:
+      - logger.log: "Schalter Favorit 2 positionieren aus"
+
+
+############################ F A V O R I T   3 ##############################################
+
+# In Position Favorit Position_3
+  - platform: template
+    name: "Lamelle in Position Favorit 3"
+    id: in_pos_favorit_3
+    optimistic: true
+    retain: true
+    state_topic:   "${mqtt_prefix}/Lamelle/in_pos_favorit_3/state"
+    command_topic:   "${mqtt_prefix}/Lamelle/in_pos_favorit_3/command"
+
+    turn_on_action:
+      - lambda: |-
+          if (id(esp_init_erfolgt)) {                                         // Nur wenn Initialisierung abgeschlossen ist!
+            ESP_LOGE("FLASH", "########### Position Favorit 3 turn_on_action.");
+            static bool last_state = false;                                       // Merker für letzten Status
+            if (!last_state) {                                                    // Nur ausführen, wenn vorher Aus war
+              id(stored_in_pos_favorit_3) = true;
+              global_preferences->sync();
+              ESP_LOGE("FLASH", "######### Position Favorit 3 auf EIN gespeichert.");
+              last_state = true;
+            } else {
+              last_state = false;
+            }
+          }
+
+    turn_off_action:
+        - lambda: |-
+            if (id(esp_init_erfolgt)) {  // Nur wenn Initialisierung abgeschlossen ist!
+              ESP_LOGE("FLASH", "########### Position Favorit 3 turn_off_action.");
+              static bool last_state = true;  // Merker für letzten Status
+              if (last_state) {  // Nur ausführen, wenn vorher EIN war
+                id(stored_in_pos_favorit_3) = false;
+                global_preferences->sync();
+                ESP_LOGE("FLASH", "########### Position Favorit 3 auf AUS gespeichert.");
+                last_state = false;
+              } else {
+                last_state = true;
+              }
+            }
+
+# Favorit 3 positionieren
+  - platform: template
+    name: "Favorit 3 positionieren"
+    id: favorit_3_positionieren
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/Lamelle/favorit_3_positionieren/state"
+    command_topic: "${mqtt_prefix}/Lamelle/favorit_3_positionieren/command"
+    turn_on_action:
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - delay: 500ms
+            - switch.turn_off: favorit_3_positionieren
+
+      - if:
+          condition:
+            - lambda: "return id(soll_favorit_3) == id(aktuelle_position);"
+          then:
+            - delay: 500ms
+            - switch.turn_off: favorit_3_positionieren
+          else:
+            - if:
+                condition:
+                  - lambda: "return id(soll_favorit_3) < id(aktuelle_position);"
+                then:
+                  - switch.turn_on: lamelle_schliessen
+            - if:
+                condition:
+                  - lambda: "return id(soll_favorit_3) > id(aktuelle_position);"
+                then:
+                  - switch.turn_on: lamelle_oeffnen
+
+    turn_off_action:
+      - logger.log: "Schalter Favorit 3 positionieren aus"
+
+# Schalter für Endlage Max
+  - platform: template
+    name: "Endlage Lamellen Max"
+    id: endlage_max
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/Lamelle/endlage_max/state"
+    command_topic: "${mqtt_prefix}/Lamelle/endlage_max/command"
+
+    turn_on_action:
+      - lambda: |-
+          if (id(esp_init_erfolgt)) {  // Nur wenn Initialisierung abgeschlossen ist!
+            id(stored_endlage_max) = true;
+            global_preferences->sync();
+            ESP_LOGI("FLASH", "Endlage Max auf EIN gespeichert.");
+          }
+
+    turn_off_action:
+      - lambda: |-
+          if (id(esp_init_erfolgt)) {  // Nur wenn Initialisierung abgeschlossen ist!
+            id(stored_endlage_max) = false;
+            global_preferences->sync();
+            ESP_LOGI("FLASH", "Endlage Max auf AUS gespeichert.");
+          }
+
+# Motor ein
+  - platform: template
+    name: "Motor Ein"
+    id: motor_ein
+    optimistic: true
+    retain: false
+    state_topic: "${mqtt_prefix}/Motor/Motor_ist_ein/state"
+    command_topic: "${mqtt_prefix}/Motor/Motor_ist_ein/command"
+
+    turn_on_action:
+      - lambda: |-
+          if(id(init_position) == false){
+            id(init_position) = true;
+            ESP_LOGE("Value", "Flag: Motor war ein gesetzt");
+            id(aktuelle_position) = id(stored_position);  // Wert speichern
+            ESP_LOGE("Value", "aktuelle_position gesetzt: %d", id(aktuelle_position));
+          }
+
+      - delay: 500ms
+
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - switch.turn_off: motor_ein
+
+      - if:
+          condition:
+            - switch.is_on: endlage_max
+            - switch.is_on: motor_lamelle_zu
+          then:
+            - switch.turn_off: endlage_max
+
+      - if:
+          condition:
+            - switch.is_on: endlage_min
+            - switch.is_on: motor_lamelle_auf
+          then:
+            - switch.turn_off: endlage_min
+
+    # Endlage während der Fahrt erreicht
+    
+    turn_off_action:
+
+      - if:
+          condition:
+            - switch.is_on: lamelle_oeffnen
+          then:
+            - switch.turn_on: endlage_max
+            - switch.turn_off: lamelle_oeffnen
+      - if:
+          condition:
+            - switch.is_on: lamelle_schliessen
+          then:
+            - switch.turn_on: endlage_min
+            - switch.turn_off: lamelle_schliessen
+            - lambda: id(aktuelle_position) = 0;
+
+      - lambda: |-
+          if(id(init_position) == true){
+            id(stored_position) = id(aktuelle_position);  // Wert speichern
+            global_preferences->sync();  // Alle gespeicherten Werte sofort in den Flash schreiben
+          }
+
+# Motor überlast
+  - platform: template
+    name: "Motor Ueberlast"
+    id: motor_ueberlast
+    optimistic: true
+    retain: false
+    state_topic: "${mqtt_prefix}/Motor/Motor_ueberlast/state"
+    command_topic: "${mqtt_prefix}/Motor/Motor_ueberlast/command"
+
+    turn_on_action:
+      - lambda: |-
+          if (id(lamelle_oeffnen)) id(lamelle_oeffnen).turn_off();
+          if (id(lamelle_schliessen)) id(lamelle_schliessen).turn_off();
+          if (id(motor_lamelle_auf))  id(motor_lamelle_auf).turn_off();
+          if (id(motor_lamelle_zu))   id(motor_lamelle_zu).turn_off();
+          if (id(favorit_0_positionieren)) id(favorit_0_positionieren).turn_off();
+          if (id(favorit_1_positionieren)) id(favorit_1_positionieren).turn_off();
+          if (id(favorit_2_positionieren)) id(favorit_2_positionieren).turn_off();
+          if (id(favorit_3_positionieren)) id(favorit_3_positionieren).turn_off();
+
+# Motor Lamelle öffnen
+  - platform: gpio
+    name: "Motor Lamelle Auf - D16"
+    pin: GPIO16
+    id: motor_lamelle_auf
+    retain: true
+    state_topic: "${mqtt_prefix}/motor/motor_lamelle_auf/state"
+    command_topic: "${mqtt_prefix}/motor/motor_lamelle_auf/command"
+    on_turn_on:
+      - lambda: |-
+          ESP_LOGE("debug", "Motor Lamelle Auf - GPIO16");    
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - delay: 500ms
+            - switch.turn_off: motor_lamelle_auf
+
+      - switch.turn_off: motor_lamelle_zu
+
+# Motor Lamelle schließen
+  - platform: gpio
+    name: "Motor Lamelle Zu - D17"
+    pin: GPIO17
+    id: motor_lamelle_zu
+    retain: true
+    state_topic: "${mqtt_prefix}/motor/motor_lamelle_zu/state"
+    command_topic: "${mqtt_prefix}/motor/motor_lamelle_zu/command"
+    on_turn_on:
+      - lambda: |-
+          ESP_LOGE("debug", "Motor Lamelle Zu - GPIO17");    
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - delay: 500ms
+            - switch.turn_off: motor_lamelle_auf
+
+      - switch.turn_off: motor_lamelle_auf
+
+# Lamelle schließen
+  - platform: template
+    name: "Lamelle schliessen"
+    id: lamelle_schliessen
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/Lamelle/lamelle_schliessen/state"
+    command_topic: "${mqtt_prefix}/Lamelle/lamelle_schliessen/command"
+
+    turn_off_action:
+      - switch.turn_off: motor_lamelle_zu
+
+    turn_on_action:
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - delay: 500ms
+            - switch.turn_off: lamelle_schliessen
+
+      - if:
+          condition:
+              - switch.is_on: endlage_min
+          then: 
+              - lambda: |-
+                  ESP_LOGD("custom", "Endlage Min - bereits erreicht");
+              - delay: 500ms
+              - switch.turn_off: lamelle_schliessen
+          else:
+            - if:
+                condition:
+                  - switch.is_on: lamelle_oeffnen
+                then:
+                  - switch.turn_off: lamelle_oeffnen
+                  - delay: 500ms
+                  - switch.turn_on: motor_lamelle_zu
+                else:  
+                  - switch.turn_on: motor_lamelle_zu       
+
+            - delay: 500ms
+            - if:
+                condition:
+                  not:
+                    switch.is_on: motor_ein
+                then:
+                # Wenn der Motor nicht läuft:
+                - lambda: |-
+                    ESP_LOGD("custom", "Endlage min erreicht");
+                - switch.turn_on: endlage_min
+                - switch.turn_off: lamelle_schliessen
+        
+# Lamelle öffnen
+  - platform: template
+    name: "Lamelle öffnen"
+    id: lamelle_oeffnen
+    optimistic: true
+    retain: true
+    state_topic: "${mqtt_prefix}/Lamelle/lamelle_oeffnen/state"
+    command_topic: "${mqtt_prefix}/Lamelle/lamelle_oeffnen/command"
+
+    turn_off_action:
+      - switch.turn_off: motor_lamelle_auf
+
+    turn_on_action:
+      - if:
+          condition:
+            - switch.is_on: motor_ueberlast
+          then:
+            - delay: 500ms
+            - switch.turn_off: lamelle_oeffnen
+
+      - if:
+          condition:
+              - switch.is_on: endlage_max
+          then:
+             - lambda: |-
+                 ESP_LOGD("custom", "Endlage max - bereits erreicht");
+             - delay: 500ms
+             - switch.turn_off: lamelle_oeffnen
+
+          else: 
+            - if:
+                condition:
+                  - switch.is_on: lamelle_schliessen
+                then:
+                  - switch.turn_off: lamelle_schliessen
+                  - delay: 500ms
+                  - switch.turn_on: motor_lamelle_auf
+                else:  
+                  - switch.turn_on: motor_lamelle_auf
+
+
+            - delay: 500ms
+            - if:
+                condition:
+                  not:
+                    switch.is_on: motor_ein
+                then:
+                # Wenn der Motor nicht läuft:
+                - lambda: |-
+                    ESP_LOGD("custom", "Endlage max - erreicht");
+                - switch.turn_on: endlage_max
+                - switch.turn_off: lamelle_oeffnen
+
+############################################################################################################################################
+interval:
+############################################################################################################################################
+
+# Wifi Status
+  - interval: 500ms
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - output.turn_on: WiFi_led
+        else:
+          - output.turn_on: WiFi_led
+          - delay: 125ms
+          - output.turn_off: WiFi_led   
+
+
+# Positionszähler
+
+  - interval: 500ms
+    then:
+      - lambda: |-
+          if (id(motor_ein).state) {
+            if (id(motor_lamelle_auf).state) {
+              id(aktuelle_position) += 1;
+            } else if (id(motor_lamelle_zu).state) {
+              id(aktuelle_position) = std::max(id(aktuelle_position) - 1, 0);
+            }
+            id(aktuelle_position_sensor).publish_state(id(aktuelle_position));
+          }              
+
+      # Lamellenpositionien bestimmen
+      - lambda: |-
+          if (id(esp_init_erfolgt)){
+            static int last_position = -1;
+            if (id(aktuelle_position) != last_position) {
+              last_position = id(aktuelle_position);
+
+              // Favorit 0 (min)
+              if (id(aktuelle_position) == id(soll_favorit_0)){
+                ESP_LOGW("Value", "Position Favorit 0 erreicht: %d", id(aktuelle_position));
+                id(in_pos_favorit_0).turn_on();
+                if (id(favorit_0_positionieren)){
+                    ESP_LOGW("Value", "Position Favorit 0 erreicht #####################");
+                    if (id(lamelle_oeffnen)) id(lamelle_oeffnen).turn_off();
+                    if (id(lamelle_schliessen)) id(lamelle_schliessen).turn_off();
+                    id(favorit_0_positionieren).turn_off();
+                } else {
+                    if (id(lamelle_schliessen)) id(lamelle_schliessen).turn_off();
+                    id(favorit_0_positionieren).turn_off();
+               }
+              } else {
+                if (id(in_pos_favorit_0).state) id(in_pos_favorit_0).turn_off();
+              }
+
+              // Favorit 1
+              if (id(aktuelle_position) == id(soll_favorit_1)){
+                ESP_LOGW("Value", "Position Favorit 1 erreicht: %d", id(aktuelle_position));
+                id(in_pos_favorit_1).turn_on();
+                if (id(favorit_1_positionieren).state){
+                    ESP_LOGW("Value", "Position Favorit 1 erreicht #####################");
+                    if (id(lamelle_oeffnen)) id(lamelle_oeffnen).turn_off();
+                    if (id(lamelle_schliessen)) id(lamelle_schliessen).turn_off();
+                    id(favorit_1_positionieren).turn_off();
+                }                
+              } else {
+                if (id(in_pos_favorit_1).state) id(in_pos_favorit_1).turn_off();
+              }
+
+              // Favorit 2
+              if (id(aktuelle_position) == id(soll_favorit_2)){
+                ESP_LOGW("Value", "Position Favorit 2 erreicht: %d", id(aktuelle_position));
+                id(in_pos_favorit_2).turn_on();
+                if (id(favorit_2_positionieren).state){
+                    ESP_LOGW("Value", "Position Favorit 2 erreicht #####################");
+                    if (id(lamelle_oeffnen)) id(lamelle_oeffnen).turn_off();
+                    if (id(lamelle_schliessen)) id(lamelle_schliessen).turn_off();
+                    id(favorit_2_positionieren).turn_off();
+                }
+              } else {
+                if (id(in_pos_favorit_2).state) id(in_pos_favorit_2).turn_off();
+              }
+
+              // Favorit 3 (max)
+              if (id(aktuelle_position) == id(soll_favorit_3)){
+                ESP_LOGW("Value", "Position Favorit 3 erreicht: %d", id(aktuelle_position));
+                id(in_pos_favorit_3).turn_on();
+                if (id(favorit_3_positionieren).state){
+                    ESP_LOGW("Value", "Position Favorit 3 erreicht #####################");
+                    if (id(lamelle_oeffnen)) id(lamelle_oeffnen).turn_off();
+                    if (id(lamelle_schliessen)) id(lamelle_schliessen).turn_off();
+                    id(favorit_3_positionieren).turn_off();
+                } else {
+                    if (id(lamelle_oeffnen)) id(lamelle_oeffnen).turn_off();
+                    id(favorit_3_positionieren).turn_off();
+                }
+              } else {
+                if (id(in_pos_favorit_3).state) id(in_pos_favorit_3).turn_off();
+              }
+
+
+            }
+          }
+
+############################################################################################################################################
+i2c:
+############################################################################################################################################
+
+  sda: GPIO22
+  scl: GPIO21
+  scan: true  # Optional: Aktiviert das Scannen der I2C-Geräte für Debugging
+
+############################################################################################################################################
+sensor:
+############################################################################################################################################
+
+  # Restart Counter
+  - platform: template
+    name: "ESP32 Restart Counter"
+    id: restart_counter_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/ESP32/restart/counter"
+
+  - platform: template
+    name: "Lamelle Aktuelle Position"
+    id: aktuelle_position_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/Lamelle/Position"
+
+  - platform: template
+    name: "Favorit 0 Sollposition"
+    id: soll_favorit_0_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/Lamelle/soll_favorit_0"
+
+  - platform: template
+    name: "Favorit 1 Sollposition"
+    id: soll_favorit_1_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/Lamelle/soll_favorit_1"
+
+  - platform: template
+    name: "Favorit 2 Sollposition"
+    id: soll_favorit_2_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/Lamelle/soll_favorit_2"
+
+  - platform: template
+    name: "Favorit 3  Sollposition"
+    id: soll_favorit_3_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/Lamelle/soll_favorit_3"
+
+  - platform: template
+    name: "Favorit Max  Sollposition"
+    id: soll_favorit_max_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/Lamelle/soll_favorit_max"
+
+  - platform: uptime
+    name: "Uptime"
+    id: esp_uptime
+    update_interval: 1000ms
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            int seconds = (int) id(esp_uptime).state;
+            int days = seconds / 86400;
+            seconds = seconds % 86400;
+            int hours = seconds / 3600;
+            seconds = seconds % 3600;
+            int minutes = seconds / 60;
+            seconds = seconds % 60;
+            char buffer[32];
+            sprintf(buffer, "%d Tage %02d:%02d:%02d", days, hours, minutes, seconds);
+            id(uptime_string).publish_state(buffer);
+
+  # ESP LOOP-Time
+  - platform: custom
+    lambda: |-
+      auto my_sensor = new LoopTimeSensor(10000);  // ✅ Hier Update-Intervall setzen (10s)
+      App.register_component(my_sensor);
+      return {my_sensor};
+    sensors:
+      - name: "ESP32 Loop-Zeit"
+        id: loop_time_sensor
+        unit_of_measurement: "ms"
+        accuracy_decimals: 2
+        internal: true        
+        on_value:
+          then:
+            - mqtt.publish:
+                topic: ${mqtt_prefix}/ESP32/LoopTime
+                payload: !lambda 'return to_string(id(loop_time_sensor).state);'
+
+
+
+  # Interne Temperatur ESP32
+  - platform: internal_temperature
+    name: "ESP32 Interne Temperatur"
+    filters:
+      - offset: -5.0  # Korrigiert die Messung um 5 Grad nach unten
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 5
+    update_interval: 10s
+    state_topic: "${mqtt_prefix}/ESP32/IntTemperatur"
+  
+
+  # Strom Antrieb/Motor
+  - platform: ina219
+    address: 0x40  # Standardadresse des INA219, passe sie an, falls nötig
+    shunt_resistance: 0.1  # Standard-Shunt-Widerstand (Ohm)
+    update_interval: 100ms
+    current:
+      name: "Motor Strom (A)"
+      unit_of_measurement: "mA"
+      accuracy_decimals: 3
+      state_topic: "${mqtt_prefix}/motor/strom"
+
+    # Median-Filter über 5 Werte, um Ausreißer zu glätten
+      filters:
+        - median:
+            window_size: 5
+            send_every: 1
+            send_first_at: 1
+
+
+      on_value:
+        # Motor ein
+        - if:
+            condition:
+              lambda: |-
+                return (x > 0.150 && !id(motor_ein).state);
+            then:
+              - delay: 100ms
+              - switch.turn_on: motor_ein
+        - if:
+            condition:
+              lambda: |-
+                return (x <= 0.150 && id(motor_ein).state);
+            then:
+              - delay: 100ms
+              - switch.turn_off: motor_ein
+
+        # Motor überlast
+        - if:
+            condition:
+              lambda: |-
+                return (x > 0.350);
+            then:
+              - delay: 500ms
+              - switch.turn_on:  motor_ueberlast
+              
+
+    power:
+      name: "Motor Leistung (W)"
+      unit_of_measurement: "mW"
+      accuracy_decimals: 3
+      state_topic: "${mqtt_prefix}/motor/leistung"
+
+    bus_voltage:
+      name: "Motor Bus-Spannung (V)"
+      unit_of_measurement: "V"
+      accuracy_decimals: 3
+      state_topic: "${mqtt_prefix}/motor/spannung"
+
+    shunt_voltage:
+      name: "Motor Shunt-Spannung (mV)"
+      unit_of_measurement: "mV"
+      accuracy_decimals: 3    
+      state_topic: "${mqtt_prefix}/motor/shunt_spannung"
+
+  # WiFi Signalstärke
+  - platform: wifi_signal
+    name: "WiFi-RSSI"
+    update_interval: 60s
+    state_topic: "${mqtt_prefix}/WiFi/RSSI"        
+    

@@ -1,0 +1,122 @@
+# Based on https://community.smarthome-for-dummies.de/viewtopic.php?t=818
+
+
+esphome:
+  name: garage-praesenz-rechts
+  friendly_name: Garage Praesenz Rechts
+
+esp8266:
+  board: d1_mini
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: "vlBpyX#7jSI5"
+
+ota:
+  password: "c06c6f63f86fed1c5dedbf87ac618f25"  
+
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Relayboard02 Fallback Hotspot"
+    password: "E6i5EPeRH8aY"
+
+# Enable Web server
+web_server:
+  port: 80
+
+# MQTT-Konfiguration
+mqtt:
+  broker: "192.168.24.15"
+  port: "1883"
+  username: "mqtt"
+  password: "o8aFbiNGCZnnQWPsyKK1BXzLdYfNEDvT"
+  discovery: true
+  discovery_retain: true
+
+captive_portal:
+
+# Sensor definition  
+# DHT 22
+sensor:
+#  - platform: dht
+#    pin: GPIO14
+#    model: DHT22
+#    temperature:
+#      name: "Garage Temperatur"
+#    humidity:
+#      name: "Garage Luftfeuchtigkeit"
+#    update_interval: 60s
+    
+
+#Ultrasonic Sensor
+  - platform: ultrasonic
+    trigger_pin: D1
+    echo_pin: D2
+    name: "Ultrasonic Sensor"
+    update_interval: 10s
+    accuracy_decimals: 2
+    unit_of_measurement: m
+    id: ultrasonic_sensor
+
+# Uptime Sensor - Zeit seit letztem rebbot
+  - platform: uptime
+    name: Uptime Sensor
+    
+
+# Ermittlung der WLAN-Signalstärke alle 60s 
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: wifi_signal_db
+    update_interval: 60s
+
+# WiFi signal Signalstärke in %
+  - platform: copy 
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+
+# Binary Sensor definition
+# Präsenzsensor
+binary_sensor:
+  - platform: template
+    name: "Garage belegt"
+    device_class: presence
+    lambda: |-
+      if (id(ultrasonic_sensor).state < 1) {
+        // car is in the garage
+        return true;
+      } else {
+        // no car
+        return false;
+      }  
+
+# Button definition
+button:
+# Neustart ESP
+  - platform: restart
+    name: "Restart"
+# Herunterfahren ESP
+  - platform: shutdown
+    name: "Shutdown"
+
+# Text Sensor definition
+# WIFI Info Bereich
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "Connected SSID"
+    bssid:
+      name: "Connected BSSID"
+    mac_address:
+      name: "Mac Wifi Address"

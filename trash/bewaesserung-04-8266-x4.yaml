@@ -1,0 +1,30 @@
+esphome:
+  name: bewaesserung-04-8266-x4
+  friendly_name: bewaesserung-04 (8266-X4)
+
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "Lb5pJ/T+pQBWeXusY/prayxHYeCooe+K8pzc8/SyTtk="
+
+ota:
+  - platform: esphome
+    password: "e59c06c78bdffae9206c2c7bb1e3ab12"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Bewaesserung-04-8266-X4"
+    password: "EnopwPIaVN2a"
+
+captive_portal:
+    

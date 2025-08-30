@@ -1,0 +1,94 @@
+esphome:
+  name: garage-links-belegt
+  friendly_name: Garage Links Belegt
+
+esp8266:
+  board: esp01_1m
+
+# Enable Home Assistant API
+api:
+  password: "vlBpyX#7jSI5"
+
+ota:
+  password: "c06c6f63f86fed1c5dedbf87ac618f25"  
+
+# Enable logging
+logger:
+
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Garage-Links-Belegt"
+    password: "l9H9XGcFw79Z"
+
+# Enable Web server
+web_server:
+  port: 80
+
+captive_portal:
+
+
+text_sensor:            #WiFi Info
+- platform: wifi_info
+  ip_address: 
+    name: IPAddress
+  ssid:
+    name: SSID
+  bssid:
+    name: BSSID
+  mac_address:
+    name: Mac
+  
+    
+- platform: template
+  name: Uptime Human Readable
+  id: uptime_human
+
+# UART-Konfiguration für A02YYUW
+uart:
+  tx_pin: GPIO1
+  rx_pin: GPIO3
+  baud_rate: 9600
+
+sensor:
+
+  #Wifi Signalstaerke
+  - platform: wifi_signal
+    name: "WiFi Signal Sensor"
+    update_interval: 60s
+
+  # Integration des A02YYUW
+  - platform: ultrasonic
+    name: "A02YYUW Distance"
+    unit_of_measurement: "cm"
+    #timeout: 2.0
+    update_interval: 5s
+    trigger_pin: GPIO1
+    echo_pin: GPIO3
+    accuracy_decimals: 1    
+
+  - platform: uptime
+    name: Uptime Sensor
+    id: uptime_sensor
+    update_interval: 60s
+    on_raw_value:
+      then:
+        - text_sensor.template.publish:
+            id: uptime_human
+            state: !lambda |-
+              int seconds = round(id(uptime_sensor).raw_state);
+              int days = seconds / (24 * 3600);
+              seconds = seconds % (24 * 3600);
+              int hours = seconds / 3600;
+              seconds = seconds % 3600;
+              int minutes = seconds /  60;
+              seconds = seconds % 60;
+              return (
+                (days ? to_string(days) + "d " : "") +
+                (hours ? to_string(hours) + "h " : "") +
+                (minutes ? to_string(minutes) + "m " : "") +
+                (to_string(seconds) + "s")
+              ).c_str();

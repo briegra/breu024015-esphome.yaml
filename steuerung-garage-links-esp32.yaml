@@ -1,0 +1,1447 @@
+# Version: 2025-06-04
+############################################################################################################################################
+# substitutions
+############################################################################################################################################
+
+substitutions:
+  devicename: "garagentor_links_esp32"
+  friendly_name: "Steuerung Garagetor Links ESP32"
+  mqtt_prefix: "Torsteuerung_Garage_Links"
+  ap_fallback: "Garagentor Links SSID"
+
+  # Konstante
+  tor_wegstrecke:    "2150"  # in mm
+  tor_position_post_von_unten:  "600" # in mm
+  tor_position_post_von_oben:   "730" # in mm - mehr weil beim schließen, die letzten 5 sekunden das Tor langsamer fährt.
+  motor_abtastzeit:   "50"   # in ms
+  tor_geschlossen_hallsensor: "750"
+  tor_poststellung_hallsensor: "60000"
+
+############################################################################################################################################
+# esphome + boot logik
+############################################################################################################################################
+
+esphome:
+  name: "${devicename}"
+  friendly_name: "${friendly_name}"
+  includes:
+    - ap_name_mapper.h
+    - loop_time_sensor.h
+    - a02yyuw_g32.h
+
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          ESP_LOGE("BOOT", "ESP gestartet");          
+          ESP_LOGE("BOOT", "Warte auf Initialisierung: 10 Sekunden");
+      - delay: 10s
+      - lambda: |-
+          id(restart_esp).turn_off();
+          id(gs_restart_counter)++;
+          id(gs_restart_counter_sensor).publish_state(id(gs_restart_counter));
+          id(gi_init_done) = true;
+          id(se_tor_laufzeit_oeffnen).publish_state(id(gf_laufzeit_oeffnen));
+          id(se_tor_laufzeit_schliessen).publish_state(id(gf_laufzeit_schliessen));
+          id(se_tor_hallsensor_aktuell).publish_state(id(gd_impulse_hallsensor));
+          id(se_tor_hallsensor_max).publish_state(id(gd_impulse_hallsensor));
+
+          unsigned long untereGrenze = 0.95 * ${tor_poststellung_hallsensor};
+          unsigned long obereGrenze =  1.05 * ${tor_poststellung_hallsensor};
+          ESP_LOGE("Tor", "untereGrenze: %d < aktuell: %d < obererGrenze: %d", untereGrenze, id(gd_impulse_hallsensor), obereGrenze);
+          id(bs_logik_tor_poststellung).publish_state(untereGrenze < id(gd_impulse_hallsensor)  && id(gd_impulse_hallsensor) < obereGrenze);
+
+
+          if (id(bs_gpio_tor_geschlossen).state) {
+            id(gd_impulse_hallsensor) = 0;
+            id(gf_tor_position) = 0.0;
+            ESP_LOGI("Tor", "Tor ist geschlossen – Position auf %.1f cm gesetzt", id(gf_tor_position));
+          }
+          if (id(bs_gpio_tor_offen).state) {
+            id(gf_tor_position) = id(gf_tor_wegstrecke);
+            ESP_LOGI("Tor", "Tor ist geschlossen – Position auf %.1f cm gesetzt", id(gf_tor_position));
+          }
+
+          ESP_LOGE("BOOT", "Init abgeschlossen");
+
+
+
+############################################################################################################################################
+# esp32 board
+############################################################################################################################################
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+############################################################################################################################################
+# logger / ota / wifi / api / web
+############################################################################################################################################
+
+logger:
+  level: INFO
+  logs:
+    mqtt: WARN
+    sensor: WARN
+    adc: WARN
+    binary_sensor: WARN
+    light: WARN
+    switch: WARN
+
+ota:
+  platform: esphome
+  password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: false
+  ap:
+    ssid: "${ap_fallback}"
+    password: "wPsNYum3nwl9"
+# Optional manual IP
+#  manual_ip:
+#    static_ip: 192.168.24.216
+#    gateway: 192.168.24.1
+#    subnet: 255.255.255.0       
+
+api:
+  encryption:
+    key: !secret api_key
+  reboot_timeout: 0s  # ⬅️ Deaktiviert den Auto-Reboot bei fehlender API-Verbindung    
+
+web_server:
+  port: 80
+
+############################################################################################################################################
+# time
+############################################################################################################################################
+
+time:
+  - platform: sntp
+    id: system_time
+    servers: time.myrbr.lcl
+    timezone: Europe/Berlin
+    on_time_sync:
+      then:
+        - logger.log: "SNTP-Zeit synchronisiert!"
+        - component.update: ts_last_boot_time
+
+############################################################################################################################################
+# globals
+############################################################################################################################################
+
+globals:
+  - id: gs_restart_counter
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+  - id: gi_init_done
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+  - id: gi_motor_startzeit
+    type: unsigned long
+    restore_value: false
+    initial_value: "0"
+
+  - id: gf_tor_position
+    type: float
+    restore_value: False
+    initial_value: "0.0"
+
+  - id: gf_tor_alte_position
+    type: float
+    restore_value: False
+    initial_value: "-1.0"
+
+  - id: gf_laufzeit_schliessen
+    type: float
+    restore_value: true
+    initial_value: "-10.0"
+
+  - id: gf_laufzeit_oeffnen
+    type: float
+    restore_value: true
+    initial_value: "15.7"
+
+  - id: gb_start_von_geschlossen
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+  - id: gb_start_von_offen
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+  - id: gf_tor_wegstrecke
+    type: float
+    restore_value: false
+    initial_value: ${tor_wegstrecke}
+
+  - id: gd_impulse_hallsensor
+    type: signed long
+    restore_value: true
+    initial_value: "0"
+
+  - id: gd_impulse_hallsensor_alt
+    type: signed long
+    restore_value: false
+    initial_value: "0"
+
+  - id: gd_impulse_hallsensor_max
+    type: signed long
+    restore_value: true
+    initial_value: "0"
+
+  - id: gd_impulse_ungerichtet
+    type: signed long
+    restore_value: false
+    initial_value: "0"
+
+  - id: gd_impulse_ungerichtet_alt
+    type: signed long
+    restore_value: false
+    initial_value: "0"
+
+  - id: gd_nachlauf_oeffnen
+    type: boolean
+    restore_value: False
+    initial_value: "false"
+
+  - id: gd_nachlauf_schliessen
+    type: boolean
+    restore_value: False
+    initial_value: "false"
+
+  - id: gd_nachlauf_oeffnen_ts
+    type: signed long
+    restore_value: false
+    initial_value: "-1"
+
+  - id: gd_nachlauf_schliessen_ts
+    type: signed long
+    restore_value: false
+    initial_value: "1"
+
+
+
+############################################################################################################################################
+# uart
+############################################################################################################################################
+
+uart:
+  id: uart_bus
+  tx_pin: GPIO12
+  rx_pin: GPIO27
+  baud_rate: 9600
+
+############################################################################################################################################
+# i2c
+############################################################################################################################################
+
+i2c:
+  - id: bus_a
+    sda: GPIO14
+    scl: GPIO13
+    scan: true
+  - id: bus_b
+    sda: GPIO22
+    scl: GPIO21
+    scan: true
+
+############################################################################################################################################
+# mqtt
+############################################################################################################################################
+
+mqtt:
+  topic_prefix: "${mqtt_prefix}"
+  discovery: false
+  broker: 192.168.24.15
+  id: mqtt_client
+  port: 1887
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+
+  on_message:
+    - topic: "${mqtt_prefix}/Fernsteuerung/Tor_Oeffnen/command"
+      payload: "ON"
+      then:
+        - lambda: |-
+            ESP_LOGI("Logik", "Befehl Tor Auf per MQTT");
+            if (id(gi_init_done)) id(sw_mqtt_tor_oeffnen).turn_on();
+
+    - topic: "${mqtt_prefix}/Fernsteuerung/Tor_Schliessen/command"
+      payload: "ON"
+      then:
+        - lambda: |-
+            ESP_LOGI("Logik", "Befehl Tor Zu per MQTT");
+            if (id(gi_init_done)) id(sw_mqtt_tor_schliessen).turn_on();
+
+    - topic: "${mqtt_prefix}/Fernsteuerung/Tor_Lueften/command"
+      payload: "ON"
+      then:
+        - lambda: |-
+            ESP_LOGI("Logik", "Befehl Tor Lüften per MQTT");
+            if (id(gi_init_done)) id(sw_mqtt_tor_lueften).turn_on();
+
+    - topic: "${mqtt_prefix}/Fernsteuerung/Tor_Poststellung/command"
+      payload: "ON"
+      then:
+        - lambda: |-
+            ESP_LOGI("Logik", "Befehl Tor Poststellung per MQTT");
+            if (id(gi_init_done)) id(sw_mqtt_tor_poststellung).turn_on();
+
+
+############################################################################################################################################
+# output
+############################################################################################################################################
+
+output:
+  - platform: gpio
+    pin: GPIO23
+    id: WiFi_led
+    inverted: false
+
+############################################################################################################################################
+# switch
+############################################################################################################################################
+
+switch:
+  ############################################################################
+  ##           Restart ESP
+  ############################################################################
+  - platform: template
+    name: "ESP Restart"
+    id: restart_esp
+    optimistic: true
+    retain: true
+    command_topic: "${mqtt_prefix}/ESP32/restart/command"
+    state_topic:   "${mqtt_prefix}/ESP32/restart/state"
+    turn_on_action:
+      - delay: 500ms
+      - lambda: |
+          ESP_LOGI("Main", "ESP wird jetzt neugestartet...");
+          ESP.restart();     
+
+  ###################################################
+  # Tor schließen
+  ###################################################
+  - platform: gpio
+    name: "Relais Tor schliessen (GPIO32)"
+    id:  sw_gpio_relais_schliessen
+    pin: GPIO32
+    restore_mode: ALWAYS_OFF
+    internal: false
+    retain: true
+    disabled_by_default: true
+
+    on_turn_on:
+      - lambda: |-
+          if(!id(sw_template_poststellung).state) id(sw_status_tor_schliesst).turn_on();
+          if(id(sw_template_poststellung).state) id(sw_status_tor_poststellung_schliesst).turn_on();
+          ESP_LOGI("Logik", "Relais sw_gpio_relais_schliessen ein");
+      - delay: 500ms
+      - lambda: id(sw_gpio_relais_schliessen).turn_off();
+
+    on_turn_off:
+      - lambda: |-
+          ESP_LOGI("Logik", "Relais sw_gpio_relais_schliessen aus");
+          id(sw_mqtt_tor_schliessen).turn_off();
+          id(sw_template_poststellung).turn_off();
+
+  ##################################################
+
+  - platform: template
+    name: "Status Tor Schliesst"
+    id: sw_status_tor_schliesst
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Status/Tor_schliesst/command"
+    state_topic: "${mqtt_prefix}/Status/Tor_schliesst/state"
+    
+    turn_on_action:
+      - lambda: |-
+          //Laufzeit berechnen
+          id(gi_motor_startzeit) = millis();
+          id(gb_start_von_offen) = id(bs_gpio_tor_offen).state;
+          ESP_LOGI("Logik", "Switch sw_status_tor_schliesst ein");
+
+    turn_off_action:
+      - lambda: |-
+          ESP_LOGW("Logik", "Start von Offen: %s", id(gb_start_von_offen) ? "JA" : "NEIN");
+          if(id(gb_start_von_offen)){
+            id(gb_start_von_offen) = false;
+            unsigned long laufzeit = millis() - id(gi_motor_startzeit);
+            id(gf_laufzeit_schliessen) = static_cast<float>(laufzeit);
+            id(se_tor_laufzeit_schliessen).publish_state(id(gf_laufzeit_schliessen));
+            ESP_LOGW("Logik", "Laufzeit schliessen: %.1f, laufzeit: %d", id(gf_laufzeit_schliessen), laufzeit);                    
+          } 
+
+          ESP_LOGI("Logik", "Switch sw_status_tor_schliesst aus");
+
+  ##################################################
+
+  - platform: template
+    name: "MQTT Tor schliessen GPIO32"
+    id: sw_mqtt_tor_schliessen
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Fernsteuerung/Tor_Schliessen/command"
+    state_topic:   "${mqtt_prefix}/Fernsteuerung/Tor_Schliessen/state"
+
+    turn_on_action:
+      - delay: 500ms
+      - lambda: |-
+          if(id(bs_gpio_tor_geschlossen).state){
+            ESP_LOGI("Logik", "Tor bereits geschlossen - mache nichts");
+            id(sw_mqtt_tor_schliessen).turn_off();
+            mqtt::global_mqtt_client->publish("${mqtt_prefix}/Fernsteuerung/Tor_schliessen/command", "OFF");
+          } else {
+            ESP_LOGI("Logik", "SW sw_mqtt_tor_schliessen ein");
+            id(sw_gpio_relais_schliessen).turn_on();
+          }
+
+    turn_off_action:
+      - mqtt.publish:
+          topic: "${mqtt_prefix}/Fernsteuerung/Tor_Schliessen/command"
+          payload: "OFF"
+      - lambda: |-
+          ESP_LOGI("Logik", "SW sw_mqtt_tor_schliessen aus");
+
+
+  ###################################################
+  # Tor öffnen
+  ###################################################
+  - platform: gpio
+    name: "Relais Tor oeffnen (GPIO25)"
+    id:  sw_gpio_relais_oeffnen
+    pin: GPIO25
+    restore_mode: ALWAYS_OFF
+    internal: false
+    retain: true
+    disabled_by_default: true
+
+    on_turn_on:
+      - lambda: |-
+          if(!id(sw_template_poststellung).state) id(sw_status_tor_oeffnet).turn_on();                   // Nur wenn Tor göffnet wird
+          if(id(sw_template_poststellung).state) id(sw_status_tor_poststellung_oeffnet).turn_on();       // Nur wenn Tor Poststellung
+          ESP_LOGI("Logik", "Relais sw_gpio_relais_oeffnen ein");
+      - delay: 500ms
+      - lambda: id(sw_gpio_relais_oeffnen).turn_off();
+
+    on_turn_off:
+      - lambda: |-
+          ESP_LOGI("Logik", "Relais sw_gpio_relais_oeffnen aus");
+          id(sw_mqtt_tor_oeffnen).turn_off();
+          id(sw_template_poststellung).turn_off();
+
+    ##################################################
+
+  - platform: template
+    name: "Status Tor Öffnet"
+    id: sw_status_tor_oeffnet
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Status/Tor_oeffnet/command"
+    state_topic: "${mqtt_prefix}/Status/Tor_oeffnet/state"
+    
+    turn_on_action:
+      - lambda: |-
+          //Laufzeit berechnen
+          id(gi_motor_startzeit) = millis();
+          id(gb_start_von_geschlossen) = id(bs_gpio_tor_geschlossen).state;
+
+          ESP_LOGI("Logik", "Switch sw_status_tor_oeffnet ein");
+
+    turn_off_action:
+      - lambda: |-
+          // Laufzeit berechnen
+          ESP_LOGW("Logik", "Start von geschlossen: %s", id(gb_start_von_geschlossen) ? "JA" : "NEIN");
+          if(id(gb_start_von_geschlossen)){
+            id(gb_start_von_geschlossen) = false;
+            unsigned long laufzeit = millis() - id(gi_motor_startzeit);
+            id(gf_laufzeit_oeffnen) = static_cast<float>(laufzeit);
+            id(se_tor_laufzeit_oeffnen).publish_state(id(gf_laufzeit_oeffnen));
+            ESP_LOGW("Logik", "Laufzeit oeffnen: %.1f, laufzeit: %d", id(gf_laufzeit_oeffnen), laufzeit);                    
+          } 
+
+          ESP_LOGI("Logik", "Switch sw_status_tor_oeffnet aus");
+
+    ##################################################
+
+  - platform: template
+    name: "MQTT Tor Öffnen GPIO25"
+    id: sw_mqtt_tor_oeffnen
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Fernsteuerung/Tor_Oeffnen/command"
+    state_topic:   "${mqtt_prefix}/Fernsteuerung/Tor_Oeffnen/state"
+    
+    turn_on_action:
+      - delay: 500ms
+      - lambda: |-
+          if(id(bs_gpio_tor_offen).state){
+            ESP_LOGI("Logik", "Tor bereits geöffnet - mache nichts");
+            id(sw_mqtt_tor_oeffnen).turn_off();
+          } else {
+            ESP_LOGI("Logik", "SW sw_mqtt_tor_oeffnen ein");
+            id(sw_gpio_relais_oeffnen).turn_on();
+          }
+
+    turn_off_action:
+      - mqtt.publish:
+          topic: "${mqtt_prefix}/Fernsteuerung/Tor_Oeffnen/command"
+          payload: "OFF"
+      - lambda: |-
+          ESP_LOGI("Logik", "SW sw_mqtt_tor_oeffnen aus");
+
+  ########################################################################################################
+  # Tor MQTT Zentraletaster
+  ########################################################################################################
+
+  - platform: template
+    name: "MQTT Tor Zentraltaster (Template)"
+    id: sw_mqtt_tor_zentraltaster
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Fernsteuerung/Tor_Zentraltaster/command"
+    state_topic:   "${mqtt_prefix}/Fernsteuerung/Tor_Zentraltaster/state"
+    
+    turn_on_action:
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_mqtt_tor_zentraltaster ein");
+          if(id(bs_gpio_tor_geschlossen).state) id(sw_mqtt_tor_oeffnen).turn_on();
+          if(id(bs_gpio_tor_offen).state) id(sw_mqtt_tor_schliessen).turn_on();
+          if(!id(bs_gpio_tor_geschlossen).state && !id(bs_gpio_tor_offen).state) id(sw_mqtt_tor_schliessen).turn_on();
+      - delay: 500ms
+      - lambda: id(sw_mqtt_tor_zentraltaster).turn_off();
+
+    turn_off_action:
+      - mqtt.publish:
+          topic: "${mqtt_prefix}/Fernsteuerung/Tor_Zentraltaster/command"
+          payload: "OFF"      
+      - lambda: ESP_LOGI("Logik", "Switch sw_mqtt_tor_zentraltaster aus");
+
+
+  ########################################################################################################
+  # Tor Poststellung
+  ########################################################################################################
+  - platform: template
+    name: "Switch Tor Poststellung (Template)"
+    id:  sw_template_poststellung
+    optimistic: true
+    on_turn_on:
+      - lambda: |-
+          ESP_LOGI("Logik", "Template sw_template_poststellung ein");
+          if(id(gf_tor_position) < ${tor_position_post_von_unten}) id(sw_gpio_relais_oeffnen).turn_on();
+          if(id(gf_tor_position) > ${tor_position_post_von_oben}) id(sw_gpio_relais_schliessen).turn_on();
+      - delay: 500ms
+      - lambda: id(sw_template_poststellung).turn_off();
+
+    on_turn_off:
+      - lambda: |-
+          ESP_LOGI("Logik", "Template sw_template_poststellung aus");
+          id(sw_mqtt_tor_poststellung).turn_off();
+
+  # Tor Poststellung MQTT
+
+  - platform: template
+    name: "MQTT Tor Poststellung (Template)"
+    id: sw_mqtt_tor_poststellung
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Fernsteuerung/Tor_Poststellung/command"
+    state_topic:   "${mqtt_prefix}/Fernsteuerung/Tor_Poststellung/state"
+    
+    turn_on_action:
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_mqtt_tor_poststellung ein");
+          id(sw_template_poststellung).turn_on();
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_mqtt_tor_poststellung aus");
+
+    turn_off_action:
+      - mqtt.publish:
+          topic: "${mqtt_prefix}/Fernsteuerung/Tor_Poststellung/command"
+          payload: "OFF"      
+
+
+    # Tor Poststellung - Status Tor Poststellung, öffnet
+
+  - platform: template
+    name: "Status Tor Poststellung, öffnet"
+    id: sw_status_tor_poststellung_oeffnet
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Status/Tor_Poststellung_oeffnet/command"
+    state_topic:   "${mqtt_prefix}/Status/Tor_Poststellung_oeffnet/state"
+
+    turn_on_action:
+      - lambda: ESP_LOGI("Logik", "Tor Poststellung - tor oeffnet ein");
+    turn_off_action:
+      - lambda: ESP_LOGI("Logik", "Tor Poststellung - tor oeffnet aus");
+
+    # Tor Poststellung - Status Tor Poststellung, schliesst
+
+  - platform: template
+    name: "Status Tor Poststellung, schliesst"
+    id: sw_status_tor_poststellung_schliesst
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Status/Tor_Poststellung_schliesst/command"
+    state_topic:   "${mqtt_prefix}/Status/Tor_Poststellung_schliesst/state"
+
+    turn_on_action:
+      - lambda: ESP_LOGI("Logik", "Tor Poststellung - tor schliesst ein");
+    turn_off_action:
+      - lambda: ESP_LOGI("Logik", "Tor Poststellung - tor schliesst aus");
+
+    # Tor Poststellung - Status Tor Poststellung
+
+  - platform: template
+    name: "Status Tor Poststellung"
+    id: sw_status_tor_poststellung
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Status/Tor_Poststellung/command"
+    state_topic:   "${mqtt_prefix}/Status/Tor_Poststellung/state"
+    
+    turn_on_action:
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_status_tor_poststellung ein");
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_status_tor_poststellung aus");
+
+
+  ###################################################
+  # Tor lüften
+  ###################################################
+  - platform: gpio
+    name: "Relais Tor lueften (GPIO33)"
+    id:  sw_gpio_relais_lueften
+    pin: GPIO33
+    restore_mode: ALWAYS_OFF
+    internal: false
+    retain: true
+    disabled_by_default: true
+    on_turn_on:
+      - lambda: |-
+          if(id(bs_gpio_tor_geschlossen).state) id(sw_status_tor_lueften_oeffnet).turn_on();
+          if(id(bs_gpio_tor_offen).state)       id(sw_status_tor_lueften_schliesst).turn_on();
+          id(sw_status_tor_lueften).turn_on();
+          ESP_LOGI("Logik", "Relais sw_gpio_relais_lueften ein");
+      - delay: 500ms
+      - lambda: id(sw_gpio_relais_lueften).turn_off();
+
+    on_turn_off:
+      - lambda: |-
+          ESP_LOGI("Logik", "Relais sw_gpio_relais_lueften aus");
+          id(sw_mqtt_tor_lueften).turn_off();
+
+  ############################################################################################################################################
+  # Status Tor lüften, öffnet
+  ############################################################################################################################################
+
+  - platform: template
+    name: "Status Tor lüften, öffnet"
+    id: sw_status_tor_lueften_oeffnet
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Status/Tor_lueftet_oeffnet/command"
+    state_topic:   "${mqtt_prefix}/Status/Tor_lueftet_oeffnet/state"
+
+    turn_on_action:
+      - lambda: ESP_LOGI("Logik", "Tor Lueften - tor oeffnet ein");
+    turn_off_action:
+      - lambda: ESP_LOGI("Logik", "Tor Lueften - tor oeffnet aus");
+
+  ############################################################################################################################################
+  # Status Tor lüften, schliesst
+  ############################################################################################################################################
+
+  - platform: template
+    name: "Status Tor lüften, schliesst"
+    id: sw_status_tor_lueften_schliesst
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Status/Tor_lueftet_schliesst/command"
+    state_topic:   "${mqtt_prefix}/Status/Tor_lueftet_schliesst/state"
+
+    turn_on_action:
+      - lambda: ESP_LOGI("Logik", "Tor Lueften - tor schliesst ein");
+    turn_off_action:
+      - lambda: ESP_LOGI("Logik", "Tor Lueften - tor schliesst aus");
+
+    ##################################################
+
+  - platform: template
+    name: "Status Tor Lüften"
+    id: sw_status_tor_lueften
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Status/Tor_lueftet/command"
+    state_topic:   "${mqtt_prefix}/Status/Tor_lueftet/state"
+    
+    turn_on_action:
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_status_tor_lueften ein");
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_status_tor_lueften aus");
+
+    ##################################################
+
+  - platform: template
+    name: "MQTT Tor Lüften (GPIO33)"
+    id: sw_mqtt_tor_lueften
+    optimistic: true
+    disabled_by_default: true
+    command_topic: "${mqtt_prefix}/Fernsteuerung/Tor_Lueften/command"
+    state_topic:   "${mqtt_prefix}/Fernsteuerung/Tor_Lueften/state"
+    
+    turn_on_action:
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_mqtt_tor_lueften ein");
+          id(sw_gpio_relais_lueften).turn_on();
+      - lambda: |-
+          ESP_LOGI("Logik", "Switch sw_mqtt_tor_lueften aus");
+
+    turn_off_action:
+      - mqtt.publish:
+          topic: "${mqtt_prefix}/Fernsteuerung/Tor_Lueften/command"
+          payload: "OFF"      
+
+  ###################################################
+  # Tor stoppen
+  ###################################################
+  - platform: gpio
+    name: "Relais Tor stoppen (GPIO33)"
+    id:  sw_gpio_relais_stopp
+    pin: GPIO26
+    restore_mode: ALWAYS_OFF
+    internal: false
+    retain: true
+    disabled_by_default: true
+    on_turn_on:
+      - lambda: ESP_LOGI("Logik", "Relais sw_gpio_relais_stopp ein");
+      - delay: 500ms
+      - switch.turn_off: sw_gpio_relais_stopp
+
+    on_turn_off:
+      - lambda: ESP_LOGI("Logik", "Relais sw_gpio_relais_stopp aus");
+
+############################################################################################################################################
+# text_sensor
+############################################################################################################################################
+
+text_sensor:
+  ############################################################################
+  ##           IP-Adresse/SSID/BSSID/MAC Adresse
+  ############################################################################
+  - platform: wifi_info
+    ip_address:
+      name: WiFi-IPAddress
+      state_topic: "${mqtt_prefix}/WiFi/IPAddress"
+    ssid:
+      name: WiFi-SSID
+      state_topic: "${mqtt_prefix}/WiFi/SSID"
+    bssid:
+      id: bssid_sensor
+      name: WiFi-BSSID
+      state_topic: "${mqtt_prefix}/WiFi/BSSID"
+    mac_address:
+      name: WiFi-MacAddress
+      state_topic: "${mqtt_prefix}/WiFi/MAC"
+
+  ############################################################################
+  ##           Access Point Name
+  ############################################################################
+  - platform: custom
+    lambda: |-
+      auto ap_name_sensor = new APNameTemplate();
+      ap_name_sensor->bssid_sensor = id(bssid_sensor);
+      App.register_component(ap_name_sensor);
+      return {ap_name_sensor};
+    text_sensors:
+      - name: "WiFi-Access Point Name"
+        id: ap_name_sensor
+        disabled_by_default: true
+        state_topic: "${mqtt_prefix}/WiFi/AccessPoint"
+
+  ############################################################################
+  ##           Restart Time
+  ############################################################################
+  - platform: template
+    name: "ESP Restart Time"
+    id: ts_last_boot_time
+    update_interval: never
+    state_topic: "${mqtt_prefix}/ESP32/restart/time"
+    lambda: |-
+      if (!id(system_time).now().is_valid()) {
+        return {"Warte auf SNTP..."};
+      }
+      auto now = id(system_time).now();
+      auto boot_timestamp = now.timestamp - (int) id(se_esp_uptime).state;
+      auto boot_time = esphome::ESPTime::from_epoch_local(boot_timestamp);
+      char str[25];
+      snprintf(str, sizeof(str), "%02u.%02u.%02u %02u:%02u:%02u",
+               (unsigned int) boot_time.day_of_month,
+               (unsigned int) boot_time.month,
+               (unsigned int) (boot_time.year % 100),
+               (unsigned int) boot_time.hour,
+               (unsigned int) boot_time.minute,
+               (unsigned int) boot_time.second);
+      return {str};
+
+  - platform: template
+    id: ts_esp_update_formatted
+    update_interval: 1000ms
+    state_topic: "${mqtt_prefix}/ESP32/uptime"
+
+############################################################################################################################################
+# binary_sensor – Torstatus über potentialfreie Kontakte
+############################################################################################################################################
+
+binary_sensor:
+
+  ############################################################################################################################################
+  # Tor geschlossen
+  ############################################################################################################################################
+
+  - platform: gpio
+    name: "Tor geschlossen (GPIO17)"
+    id: bs_gpio_tor_geschlossen
+    internal: false    
+    pin:
+      number: GPIO17
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+    state_topic: "${mqtt_prefix}/Status/Tor/geschlossen"
+
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - lambda: ESP_LOGI("Logik", "Tor ist geschlossen");  
+              - switch.turn_off: sw_status_tor_schliesst          
+            else:
+              - lambda: ESP_LOGI("Logik", "Tor ist nicht mehr geschlossen");            
+
+  ############################################################################################################################################
+  # Tor ist komplett offen
+  ############################################################################################################################################
+
+  - platform: gpio
+    name: "Tor offen (GPIO18)"
+    id: bs_gpio_tor_offen
+    internal: false    
+    pin:
+      number: GPIO18
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+    state_topic: "${mqtt_prefix}/Status/Tor/offen"
+
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - lambda: ESP_LOGI("Logik", "Tor ist offen");
+              - switch.turn_off: sw_status_tor_oeffnet
+            else:
+              - lambda: ESP_LOGI("Logik", "Tor ist nicht mehr offen");            
+
+  ############################################################################################################################################
+  # Status Tor Position lüften
+  ############################################################################################################################################
+
+  - platform: template
+    name: "Status Tor lüftet (Logik)"
+    id: bs_logik_tor_lueftet
+    internal: false    
+    state_topic: "${mqtt_prefix}/Status/Tor_lueftet"
+
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - lambda: ESP_LOGI("Logik", "Tor lüftet ein");            
+            else:
+              - lambda: ESP_LOGI("Logik", "Tor lueftet nicht ein");            
+
+  ############################################################################################################################################
+  # Status Tor Position Poststellung
+  ############################################################################################################################################
+
+  - platform: template
+    name: "Status Tor Poststellung (Logik)"
+    id: bs_logik_tor_poststellung
+    internal: false    
+    state_topic: "${mqtt_prefix}/Status/Tor_Poststellung"
+
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - lambda: ESP_LOGI("Logik", "Tor Poststellung ein");            
+            else:
+              - lambda: ESP_LOGI("Logik", "Tor Poststellung nicht ein");            
+
+
+############################################################################################################################################
+  # Tor Motor ist ein
+  ############################################################################################################################################
+
+  - platform: gpio
+    name: "Tor Motor Ein (GPIO4)"
+    id: bs_gpio_tor_motor_ein
+    internal: false    
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
+    state_topic: "${mqtt_prefix}/Status/Tor/Motor_ein"
+
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - lambda: |-
+                  ESP_LOGI("Logik", "Tor-Motor ist ein");
+                  id(bs_logik_tor_lueftet).publish_state(false);
+                  id(bs_logik_tor_poststellung).publish_state(false);
+                  id(gi_motor_startzeit) = millis();    
+
+            else:
+              - lambda: |-
+                  ESP_LOGI("Logik", "Tor-Motor ist aus");  
+
+                  if(id(sw_status_tor_lueften).state) id(bs_logik_tor_lueftet).publish_state(true);
+                  id(sw_status_tor_lueften).turn_off();
+                  id(sw_status_tor_oeffnet).turn_off();
+                  id(sw_status_tor_schliesst).turn_off();
+                  id(sw_status_tor_lueften_oeffnet).turn_off();
+                  id(sw_status_tor_lueften_schliesst).turn_off();
+                  id(sw_status_tor_poststellung_oeffnet).turn_off();
+                  id(sw_status_tor_poststellung_schliesst).turn_off();
+
+  ############################################################################################################################################
+  # Tor Motor schliesst Tor
+  ############################################################################################################################################
+
+  - platform: gpio
+    name: "Tor Motor schliesst Tor (GPIO2)"
+    id: bs_gpio_tor_motor_schliesst
+    internal: false    
+    pin:
+      number: GPIO2
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 250ms
+      - delayed_off: 2000ms
+    state_topic: "${mqtt_prefix}/Status/Tor/Motor_schliesst"
+
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - lambda: ESP_LOGI("Logik", "Tor-Motor schliesst");            
+            else:
+              - lambda: ESP_LOGI("Logik", "Tor-Motor schliesst nicht");            
+
+  ############################################################################################################################################
+  # >>> PIR-Sensor an GPIO34 (HC-SR501)
+  ############################################################################################################################################
+
+  - platform: gpio
+    pin: GPIO34
+    name: "Bewegung Garage PIR (GPIO34)"
+    device_class: motion
+    internal: true    
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 2s
+    state_topic: "${mqtt_prefix}/Status/Status/Bewegung_PIR"
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - lambda: ESP_LOGI("Logik", "PIR meldet Bewegung Ein");            
+            #else:
+            #  - lambda: ESP_LOGI("Logik", "PIR meldet Bewegung Aus");            
+
+  ############################################################################################################################################
+  # binary_sensor – Belegung Garage (Distanz < 1 m = belegt)
+  ############################################################################################################################################
+
+  - platform: template
+    name: "Garage Belegt (A02YYUW)"
+    device_class: occupancy
+    lambda: |-
+      return (id(distance).state < 100.0);  // Abstand < 100 cm = belegt
+    filters:
+      - delayed_on: 10s     # Wird erst nach 10 Sekunden als "belegt" erkannt
+      - delayed_off: 30s    # Wird erst nach 30 Sekunden als "frei" erkannt
+    state_topic: "${mqtt_prefix}/Status/Garage_Belegt"
+
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'  # true = Garage ist belegt
+            then:
+              - lambda: |-
+                  ESP_LOGI("Logik", "Garage ist jetzt belegt.");
+        - if:
+            condition:
+              lambda: 'return !x;'  # false = Garage ist frei
+            then:
+              - lambda: |-
+                  ESP_LOGI("Logik", "Garage ist jetzt frei.");
+
+############################################################################################################################################
+# sensor
+############################################################################################################################################
+
+sensor:
+  ############################################################################
+  ##           Hall-Sensor
+  ############################################################################
+  - platform: pulse_counter
+    pin: GPIO15
+    id: motor_impulse
+    name: "Motorimpulsfrequenz"
+    update_interval: 100ms
+    internal: true
+    filters: 
+      - multiply: 1
+
+    on_value:
+      then:
+        - lambda: |-
+            //ungerichtete Impulse - d.h. der Abtrieb läuft bereits ohne das der Eingang dies signalisiert
+            if(!id(bs_gpio_tor_motor_ein).state){
+              id(gd_impulse_ungerichtet) = id(gd_impulse_ungerichtet) + (int) x;
+            }
+
+            // Nachlauf Öffnen - d.h. wenn das Tor komplett geöffnet ist, fährt es einige Millimeter zurück
+            if(id(gd_impulse_ungerichtet) == 0){
+              if ((millis() - id(gd_nachlauf_oeffnen_ts)) > 500 && (id(gd_nachlauf_oeffnen_ts) != -1)){
+                id(gd_nachlauf_oeffnen) = false;
+                id(gd_nachlauf_oeffnen_ts) = -1;
+              }
+            }
+
+            if(id(gd_nachlauf_oeffnen) && id(gd_impulse_ungerichtet) > 0){
+              id(gd_impulse_hallsensor) = id(gd_impulse_hallsensor) - id(gd_impulse_ungerichtet);
+              id(gd_impulse_ungerichtet) = 0;
+            }
+
+            // Nachlauf schließen - d.h. wenn das Tor komplett gegeschlossen ist, fährt es einige Millimeter auf
+            if(id(gd_impulse_ungerichtet) == 0){
+              if((millis() - id(gd_nachlauf_schliessen_ts)) > 500 && (id(gd_nachlauf_schliessen_ts) != -1)){
+                id(gd_nachlauf_schliessen) = false;
+                id(gd_nachlauf_schliessen_ts) = -1;
+              }
+            }
+
+            if(id(gd_nachlauf_schliessen) && id(gd_impulse_ungerichtet) > 0){
+              if(id(bs_gpio_tor_geschlossen).state){
+                id(gd_impulse_hallsensor) = id(gd_impulse_ungerichtet);
+              }
+              if(!id(bs_gpio_tor_geschlossen).state){
+                id(gd_impulse_hallsensor) = id(gd_impulse_hallsensor) + id(gd_impulse_ungerichtet);
+              }
+              id(gd_impulse_ungerichtet) = 0;
+            }
+
+            //Impulse auf - d.h. das signal "Motor Ein" und "Motor schliesst" liegt nicht an --> Tor öffnet
+            if(id(bs_gpio_tor_motor_ein).state && !id(bs_gpio_tor_motor_schliesst).state){
+              if(id(gd_impulse_ungerichtet) > 0){
+                id(gd_impulse_hallsensor) = id(gd_impulse_hallsensor) + id(gd_impulse_ungerichtet);
+                id(gd_impulse_ungerichtet) = 0;
+              }
+              id(gd_nachlauf_oeffnen) = true;
+              id(gd_nachlauf_oeffnen_ts) = millis();
+              id(gd_impulse_hallsensor) = id(gd_impulse_hallsensor) + (int) x;
+              if(id(gd_impulse_hallsensor) > id(gd_impulse_hallsensor_max)){
+                id(gd_impulse_hallsensor_max) = id(gd_impulse_hallsensor);
+              }
+            }
+
+            //Impulse auf - d.h. das signal "Motor Ein" und "Motor schliesst" liegt an --> Tor schliesst
+            if(id(bs_gpio_tor_motor_ein).state && id(bs_gpio_tor_motor_schliesst).state){
+              if(id(gd_impulse_ungerichtet) > 0){
+                id(gd_impulse_hallsensor) = id(gd_impulse_hallsensor) - id(gd_impulse_ungerichtet);
+                id(gd_impulse_ungerichtet) = 0;
+              }
+              id(gd_nachlauf_schliessen) = true;
+              id(gd_nachlauf_schliessen_ts) = millis();
+              id(gd_impulse_hallsensor) = id(gd_impulse_hallsensor) - (int) x;
+            }
+
+            if(id(gd_impulse_hallsensor) < 0){
+              ESP_LOGE("Hallsensor", "hall: %d",id(gd_impulse_hallsensor));
+              id(gd_impulse_hallsensor) = 0;
+            }
+
+            ////////////////////////////////////////////////////////////////////////////////////////////
+            // Poststellung prüfen
+            ////////////////////////////////////////////////////////////////////////////////////////////
+
+            if(id(sw_status_tor_poststellung_oeffnet).state || id(sw_status_tor_poststellung_schliesst).state){
+              unsigned long untereGrenze = 0.95 * ${tor_poststellung_hallsensor};
+              unsigned long obereGrenze =  1.05 * ${tor_poststellung_hallsensor};
+              ESP_LOGE("Tor", "untereGrenze: %d < aktuell: %d < obererGrenze: %d", untereGrenze, id(gd_impulse_hallsensor), obereGrenze);
+              if(untereGrenze < id(gd_impulse_hallsensor)  && id(gd_impulse_hallsensor) < obereGrenze){
+                if(!id(bs_logik_tor_poststellung).state){  
+                  id(bs_logik_tor_poststellung).publish_state(true);
+                  id(sw_gpio_relais_stopp).turn_on();
+                  ESP_LOGE("Tor", "Tor ist jetzt in Poststellung! Position: %d", id(gd_impulse_hallsensor));
+                }
+              }
+            }
+
+
+  ############################################################################
+  ##           Hallsensor Impulse Max
+  ############################################################################
+  - platform: template
+    name: "Sensor Tor Hallsensor Max"
+    id: se_tor_hallsensor_max
+    accuracy_decimals: 0
+    unit_of_measurement: "imp"
+    internal: false
+    state_topic: "${mqtt_prefix}/Sensor/Tor_Hallsensor_Max"  
+
+  ############################################################################
+  ##           Hallsensor Impulse Aktuell
+  ############################################################################
+  - platform: template
+    name: "Sensor Tor Hallsensor Aktuell"
+    id: se_tor_hallsensor_aktuell
+    accuracy_decimals: 0
+    unit_of_measurement: "imp"
+    internal: false
+    state_topic: "${mqtt_prefix}/Sensor/Tor_Hallsensor_Aktuell"  
+
+  ############################################################################
+  ##           Laufzeiten Tor Öffnen
+  ############################################################################
+  - platform: template
+    name: "Sensor Tor Laufzeit öffnen"
+    id: se_tor_laufzeit_oeffnen
+    accuracy_decimals: 0
+    unit_of_measurement: "ms"
+    internal: true
+    state_topic: "${mqtt_prefix}/Sensor/Tor_Laufzeit_Oeffnen"  
+  
+  ############################################################################
+  ##           Laufzeiten Tor schliessen
+  ############################################################################
+  - platform: template
+    name: "Sensor Tor Laufzeit schliessen"
+    id: se_tor_laufzeit_schliessen
+    accuracy_decimals: 0
+    unit_of_measurement: "ms"
+    internal: true
+    state_topic: "${mqtt_prefix}/Sensor/Tor_Laufzeit_schliessen"  
+
+  ############################################################################
+  ##           Inkrement Wegstrecke
+  ############################################################################
+  - platform: template
+    name: "Sensor Tor Inkrement öffnen"
+    id: se_tor_inkrement_oeffnen
+    accuracy_decimals: 0
+    unit_of_measurement: "mm"
+    internal: true
+    state_topic: "${mqtt_prefix}/Sensor/Tor_Inkrement_Oeffnen"  
+  
+  ############################################################################
+  ##           Laufzeiten Tor schliessen
+  ############################################################################
+  - platform: template
+    name: "Sensor Tor Inkrement schliessen"
+    id: se_tor_inkrement_schliessen
+    accuracy_decimals: 0
+    unit_of_measurement: "mm"
+    internal: true
+    state_topic: "${mqtt_prefix}/Sensor/Tor_Inkrement_schliessen"  
+
+
+  ############################################################################
+  ##           WiFi Signalstärke
+  ############################################################################
+  - platform: wifi_signal
+    name: "WiFi-RSSI"
+    update_interval: 60s
+    state_topic: "${mqtt_prefix}/WiFi/RSSI"
+
+  ############################################################################
+  ##           Restart Counter
+  ############################################################################
+  - platform: template
+    name: "ESP32 Restart Counter"
+    id: gs_restart_counter_sensor
+    accuracy_decimals: 0
+    state_topic: "${mqtt_prefix}/ESP32/restart/counter"
+  
+  ############################################################################
+  ##           ESP Uptime
+  ############################################################################
+  - platform: uptime
+    name: "Uptime"
+    id: se_esp_uptime
+    update_interval: 1000ms
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(gi_init_done)) {
+              int seconds = (int) id(se_esp_uptime).state;
+              int days = seconds / 86400;
+              seconds %= 86400;
+              int hours = seconds / 3600;
+              seconds %= 3600;
+              int minutes = seconds / 60;
+              seconds %= 60;
+              char buffer[32];
+              sprintf(buffer, "%d Tage %02d:%02d:%02d", days, hours, minutes, seconds);
+              id(ts_esp_update_formatted).publish_state(buffer);
+            }
+  ############################################################################
+  ##           Interne Temperatur
+  ############################################################################
+
+  - platform: internal_temperature
+    name: "ESP32 Interne Temperatur"
+    filters:
+      - offset: -5.0
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 5
+    update_interval: 60s
+    internal: true
+    state_topic: "${mqtt_prefix}/ESP32/IntTemperatur"
+
+  ############################################################################
+  ##           Loop Time
+  ############################################################################
+  - platform: custom
+    lambda: |-
+      auto my_sensor = new LoopTimeSensor(10000);
+      App.register_component(my_sensor);
+      return {my_sensor};
+    sensors:
+      - name: "ESP32 Loop-Zeit"
+        id: loop_time_sensor
+        unit_of_measurement: "ms"
+        accuracy_decimals: 2
+        internal: true
+        state_topic: "${mqtt_prefix}/ESP32/LoopTime"
+
+  ############################################################################
+  ##           Abstands Sensor mit eigener Funktion
+  ############################################################################
+  - platform: custom
+    lambda: |-
+      auto my_sensor = new A02YYUW(id(uart_bus), 5000);
+      App.register_component(my_sensor);
+      return {my_sensor->distance_sensor};
+    sensors:
+      - name: "A02YYUW Distance"
+        id: distance
+        unit_of_measurement: "cm"
+        accuracy_decimals: 0
+        state_topic: "${mqtt_prefix}/Sensor/Abstand"
+
+  ############################################################################
+  ##           Temperatur/Feuchte/Luftdruck Sensor
+  ############################################################################
+  - platform: bme280_i2c
+    i2c_id: bus_a
+    address: 0x76
+    update_interval: 15s
+
+    temperature:
+      name: "Sensor Raumtemperatur"
+      unit_of_measurement: "°C"
+      accuracy_decimals: 1
+      internal: true
+      state_topic: "${mqtt_prefix}/Sensor/Raumtemperatur"
+
+    pressure:
+      id: bme280_pressure
+      name: "Sensor absoluter Luftdruck"
+      unit_of_measurement: "hPa"
+      accuracy_decimals: 1
+      internal: true
+      state_topic: "${mqtt_prefix}/Sensor/Luftdruck absolut"
+
+    humidity:
+      name: "Sensor Luftfeuchtigkeit"
+      unit_of_measurement: "%"
+      accuracy_decimals: 1
+      internal: true
+      state_topic: "${mqtt_prefix}/Sensor/Luftfeuchtigkeit"
+
+  - platform: template
+    name: "Sensor relativer Luftdruck"
+    unit_of_measurement: "hPa"
+    accuracy_decimals: 1
+    internal: true
+    lambda: |-
+      const float altitude = 330.00;
+      return id(bme280_pressure).state / pow(1.0 - (altitude / 44330.0), 5.255);
+    update_interval: 10s
+    state_topic: "${mqtt_prefix}/Sensor/Luftdruck relativ"
+
+  ############################################################################################################################################
+  # >>> BH1750FVI Helligkeitssensor
+  ############################################################################################################################################
+
+  - platform: bh1750
+    i2c_id: bus_b
+    address: 0x23  # ggf. 0x5C, je nach ADDR-Pin am Modul
+    update_interval: 15s
+    name: "Helligkeit Garage (BH1750)"
+    state_topic: "${mqtt_prefix}/Sensor/Helligkeit"
+
+  ############################################################################################################################################
+  # Tor Position
+  ############################################################################################################################################
+
+  - platform: template
+    name: "Tor Position Sensor"
+    id: se_tor_position
+    unit_of_measurement: "mm"
+    accuracy_decimals: 0
+    lambda: |-
+      return id(gf_tor_position);
+    update_interval: never  # wichtig: keine automatische Aktualisierung
+    state_topic: "${mqtt_prefix}/Sensor/Tor/Position"
+
+
+############################################################################################################################################
+# interval
+############################################################################################################################################
+
+interval:
+  ############################################################################
+  ##           WiFi Connected LED
+  ############################################################################
+  - interval: 500ms
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - output.turn_on: WiFi_led
+        else:
+          - output.turn_on: WiFi_led
+          - delay: 125ms
+          - output.turn_off: WiFi_led
+
+  ############################################################################
+  ##           Tor Position
+  ############################################################################
+
+  - interval: ${motor_abtastzeit}ms
+    then:
+      - lambda: |-
+          if (!id(bs_gpio_tor_motor_ein).state) return;
+
+          // Wegstrecke berechnen
+          unsigned long jetzt = millis();
+          unsigned long laufzeit = jetzt - id(gi_motor_startzeit);
+
+          float anz_inkremente_schliessen = id(gf_laufzeit_schliessen) / ${motor_abtastzeit};
+          float inkrement_schliessen      = ${tor_wegstrecke} / anz_inkremente_schliessen * -1.0;
+          if(id(se_tor_inkrement_schliessen).state != inkrement_schliessen) id(se_tor_inkrement_schliessen).publish_state(inkrement_schliessen);
+
+          float anz_inkremente_oeffnen    = id(gf_laufzeit_oeffnen) / ${motor_abtastzeit};
+          float inkrement_oeffnen         = ${tor_wegstrecke} / anz_inkremente_oeffnen;
+          if(id(se_tor_inkrement_oeffnen).state != inkrement_oeffnen) id(se_tor_inkrement_oeffnen).publish_state(inkrement_oeffnen);
+
+          float inkrement_bewegung        = (id(bs_gpio_tor_motor_schliesst).state ? inkrement_schliessen : inkrement_oeffnen);
+
+          id(gf_tor_position) += inkrement_bewegung;
+
+          // Endlagen prüfen
+          if(id(gf_tor_position) < 0.0)              id(gf_tor_position) = 0.0;
+          if(id(gf_tor_position) > id(gf_tor_wegstrecke)) id(gf_tor_position) = id(gf_tor_wegstrecke);
+
+          // Poststellung prüfen
+          //if(id(gf_tor_position) > ${tor_position_post_von_unten}){
+          //  if(id(sw_status_tor_poststellung_oeffnet).state){
+          //    if(!id(bs_logik_tor_poststellung).state){  
+          //     ESP_LOGE("Tor", "sw_status_tor_poststellung_oeffnet %s", id(sw_status_tor_poststellung_oeffnet) ? "ja" : "nein");
+          //      id(bs_logik_tor_poststellung).publish_state(true);
+          //      ESP_LOGE("Tor", "Poststellung öffnen erreicht, Position: %.1f", id(gf_tor_position));
+          //      id(sw_gpio_relais_stopp).turn_on();
+          //    }
+          //  }
+          //}
+
+          //if(id(gf_tor_position) <= ${tor_position_post_von_oben}){
+          //  if(id(sw_status_tor_poststellung_schliesst).state){
+          //    if(!id(bs_logik_tor_poststellung).state){
+          //      ESP_LOGE("Tor", "sw_status_tor_poststellung_schliesst %s", id(sw_status_tor_poststellung_schliesst) ? "ja" : "nein");
+          //      id(bs_logik_tor_poststellung).publish_state(true);
+          //      ESP_LOGE("Tor", "Poststellung schliessen erreicht, Position: %.1f", id(gf_tor_position));
+          //      id(sw_gpio_relais_stopp).turn_on();
+          //    }
+          //  }
+          //}
+
+          //id(se_tor_position).publish_state(id(gf_tor_position));
+
+          //ESP_LOGI("Tor", "Position: %.0f, inkrement: %.1f", id(gf_tor_position), inkrement_bewegung);
+
+  - interval: 500ms
+    then:
+      - lambda: |-
+          if(id(gf_tor_alte_position) == id(gf_tor_position)) return;
+
+          id(gf_tor_alte_position) = id(gf_tor_position);
+          id(se_tor_position).publish_state(id(gf_tor_position));
+
+  - interval: 1000ms
+    then:
+      - lambda: |-
+          if(id(gd_impulse_ungerichtet) == id(gd_impulse_ungerichtet_alt) && id(gd_impulse_hallsensor) == id(gd_impulse_hallsensor_alt) && !id(gd_nachlauf_schliessen) && !id(gd_nachlauf_oeffnen)) return;
+          id(gd_impulse_ungerichtet_alt) = id(gd_impulse_ungerichtet);
+          id(gd_impulse_hallsensor_alt) = id(gd_impulse_hallsensor);
+
+          id(se_tor_hallsensor_max).publish_state(id(gd_impulse_hallsensor_max));
+          id(se_tor_hallsensor_aktuell).publish_state(id(gd_impulse_hallsensor));
+          
+          //ESP_LOGI("Hallsensor", "ungerichtet: %d, hall: %d, alt: %d, nachlauf_schliessen: %s, nachlauf_oeffnen: %s", id(gd_impulse_ungerichtet), id(gd_impulse_hallsensor), id(gd_impulse_hallsensor_max), id(gd_nachlauf_schliessen) ? "ja" : "nein", id(gd_nachlauf_oeffnen) ? "ja" : "nein");

@@ -1,0 +1,38 @@
+substitutions:
+  name: sump-pump
+
+esphome:
+  name: garage-rechts-belegt
+  friendly_name: Garage Rechts Belegt
+
+esp8266:
+  board: d1_mini
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: "vlBpyX#7jSI5"
+
+ota:
+  password: "c06c6f63f86fed1c5dedbf87ac618f25"  
+
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Relayboard02 Fallback Hotspot"
+    password: "E6i5EPeRH8aY"
+
+# Enable Web server
+web_server:
+  port: 80
+
+# Konfiguration für die UART-Schnittstelle
+uart:
+  tx_pin: GPIO1      # UART TX-Pin (an RX des A02YYUW)
+  rx_pin: GPIO3      # UART RX-Pin (an TX des A02YYUW)
+  baud_rate: 9600    # Standard-Baudrate für den A02YYUW

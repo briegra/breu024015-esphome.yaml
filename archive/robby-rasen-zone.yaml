@@ -1,0 +1,29 @@
+esphome:
+  name: robby-rasen-zone
+  friendly_name: Robby-Rasen-Zone
+
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "tgS0xf0rvwWfuFLhIT0wxB2FfzTPUJYkbgPrlvS1Drw="
+
+ota:
+  password: "62a64a3200be34caa42c268f2589c5eb"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Robby-Rasen-Zone"
+    password: "KAbiEtrSBlZ3"
+
+captive_portal:
+    

@@ -1,0 +1,166 @@
+esphome:
+  name: "garage-links-8266"
+  platform: ESP8266
+  board: esp12e
+  
+  
+# Enable Home Assistant API
+api:
+  password: "vlBpyX#7jSI5"
+
+ota:
+  password: "c06c6f63f86fed1c5dedbf87ac618f25"  
+
+# Enable logging
+logger:
+
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Relayboard02 Fallback Hotspot"
+    password: "E6i5EPeRH8aY"
+
+# Enable Web server
+web_server:
+  port: 80
+
+captive_portal:
+
+
+text_sensor:            #WiFi Info
+- platform: wifi_info
+  ip_address: 
+    name: IPAddress
+  ssid:
+    name: SSID
+  bssid:
+    name: BSSID
+  mac_address:
+    name: Mac
+  
+    
+- platform: template
+  name: Uptime Human Readable
+  id: uptime_human
+
+sensor:
+  - platform: uptime
+    name: Uptime Sensor
+    id: uptime_sensor
+    update_interval: 60s
+    on_raw_value:
+      then:
+        - text_sensor.template.publish:
+            id: uptime_human
+            state: !lambda |-
+              int seconds = round(id(uptime_sensor).raw_state);
+              int days = seconds / (24 * 3600);
+              seconds = seconds % (24 * 3600);
+              int hours = seconds / 3600;
+              seconds = seconds % 3600;
+              int minutes = seconds /  60;
+              seconds = seconds % 60;
+              return (
+                (days ? to_string(days) + "d " : "") +
+                (hours ? to_string(hours) + "h " : "") +
+                (minutes ? to_string(minutes) + "m " : "") +
+                (to_string(seconds) + "s")
+              ).c_str();
+              
+#Abstands Sensor
+  - platform: ultrasonic
+    trigger_pin: GPIO2
+    echo_pin: GPIO15
+    name: "Ultrasonic Abstands Sensor"
+    pulse_time: 20us
+    timeout: 5.0m
+    update_interval: 3s
+    filters:
+      - filter_out: nan
+
+   
+#Wifi Signalstaerke
+  - platform: wifi_signal
+    name: "WiFi Signal Sensor"
+    update_interval: 60s
+
+
+# Use the blue LED in the device as a status LED, which will blink if there are warnings (slow) or errors (fast)
+#status_led:
+#  pin:
+#    number: GPIO5
+#    inverted: True
+
+# Four relay outputs, exposed as switches in Home Assistant
+switch:
+  - platform: gpio
+    name: Relay1
+    id: relay1
+    pin: 
+      number: GPIO16
+#      inverted: yes
+    on_turn_on:
+    - delay: 1000ms
+    - logger.log: "Auto_Off: Reserve"
+    - switch.turn_off: relay1    
+
+  - platform: gpio
+    name: Relay2
+    id: relay2
+    pin: 
+      number: GPIO14
+#      inverted: yes
+    on_turn_on:
+    - delay: 1000ms
+    - logger.log: "Auto_Off: TorLueften"
+    - switch.turn_off: relay2    
+    
+  - platform: gpio
+    name: Relay3
+    id: relay3
+    pin: 
+      number: GPIO12
+#      inverted: yes
+    on_turn_on:
+    - delay: 1000ms
+    - logger.log: "Auto_Off: TorOeffnen"
+    - switch.turn_off: relay3    
+  
+  - platform: gpio
+    name: Relay4
+    id: relay4
+    pin: 
+      number: GPIO13
+#      inverted: yes
+    on_turn_on:
+    - delay: 1000ms
+    - logger.log: "Auto_Off: TorSchlieÃŸen"
+    - switch.turn_off: relay4
+  
+binary_sensor:
+  - platform: gpio
+    name: Tor Offen
+    device_class: door
+    pin:
+      number: GPIO5
+      mode: INPUT_PULLUP  
+      inverted: yes
+      
+  - platform: gpio
+    name: Tor Geschlossen
+    device_class: door
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP  
+      inverted: yes
+      
+  - platform: gpio
+    name: Antrieb Ein
+    device_class: door
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP  
+      inverted: yes    

@@ -1,0 +1,151 @@
+esphome:
+  name: pergolux-v2
+  friendly_name: Pergolux V2
+  includes:
+    - ap_name_mapper.h
+
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+  level: DEBUG
+  logs:
+    sensor: ERROR  
+    adc: WARN      
+    mqtt: DEBUG    
+    text_sensor: ERROR
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "CotQ1EfcLHaxPrOmG2a9AiBtX7QYGGcXnNzYicDwrxA="
+
+ota:
+  password: "8de4171f7e36e293ecc1fed07933f2fb"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Optional manual IP
+  manual_ip:
+    static_ip: 192.168.24.179
+    gateway: 192.168.24.1
+    subnet: 255.255.255.0   
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Pergolux-V2 Fallback Hotspot"
+    password: "OICQVC8bnZWU"
+
+# Enable Web server
+web_server:
+  port: 80
+
+text_sensor:
+  - platform: wifi_info
+    ip_address: 
+      name: IPAddress
+
+    bssid:
+      id: bssid_sensor  # ID für die BSSID
+      name: BSSID
+      
+    mac_address:
+      name: Mac
+
+  - platform: custom
+    lambda: |-
+      auto ap_name_sensor = new APNameTemplate();
+      ap_name_sensor->bssid_sensor = id(bssid_sensor);
+      App.register_component(ap_name_sensor);
+      return {ap_name_sensor};
+    text_sensors:
+      - name: "Access Point Name"
+
+captive_portal:
+
+output:
+  - platform: gpio
+    pin: GPIO2
+    id: WiFi_led
+    inverted: yes
+
+# GPIO Outputs für BTS7960
+  - platform: gpio
+    pin: GPIO13  # RPWM
+    id: motor_forward
+
+  - platform: gpio
+    pin: GPIO12  # LPWM
+    id: motor_backward
+
+# Schalter für Vorwärts- und Rückwärtslauf
+switch:
+  - platform: gpio
+    name: "Motor Vorwärts"
+    pin: GPIO0
+    id: motor_forward_enable
+    on_turn_on:
+      - output.turn_off: motor_backward  # Rückwärts deaktivieren
+      - output.turn_on: motor_forward    # Vorwärts aktivieren
+    on_turn_off:
+      - output.turn_off: motor_forward   # Motor stoppen
+
+  - platform: gpio
+    name: "Motor Rückwärts"
+    pin: GPIO2
+    id: motor_backward_enable
+    on_turn_on:
+      - output.turn_off: motor_forward  # Vorwärts deaktivieren
+      - output.turn_on: motor_backward  # Rückwärts aktivieren
+    on_turn_off:
+      - output.turn_off: motor_backward # Motor stoppen
+
+i2c:
+  sda: GPIO4
+  scl: GPIO5
+  scan: true  # Optional: Aktiviert das Scannen der I2C-Geräte für Debugging
+
+sensor:
+  - platform: ina219
+    address: 0x40  # Standardadresse des INA219, passe sie an, falls nötig
+    shunt_resistance: 0.1  # Standard-Shunt-Widerstand (Ohm)
+    update_interval: 250ms
+    current:
+      name: "Strom (mA)"
+      unit_of_measurement: "mA"
+      accuracy_decimals: 3
+
+    power:
+      name: "Leistung (mW)"
+      unit_of_measurement: "mW"
+      accuracy_decimals: 3
+
+    bus_voltage:
+      name: "Bus-Spannung (V)"
+      unit_of_measurement: "V"
+      accuracy_decimals: 3
+
+    shunt_voltage:
+      name: "Shunt-Spannung (mV)"
+      unit_of_measurement: "mV"
+      accuracy_decimals: 3    
+
+interval:
+  # Wifi Status
+  - interval: 250ms
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - output.turn_on: WiFi_led
+        else:
+          - output.turn_on: WiFi_led
+          - delay: 125ms
+          - output.turn_off: WiFi_led   
+
+ 
+

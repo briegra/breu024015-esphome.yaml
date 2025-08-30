@@ -1,0 +1,422 @@
+esphome:
+  name: lamellensteuerung
+  friendly_name: Lamellensteuerung
+  includes:
+    - ap_name_mapper.h
+
+
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+  level: DEBUG
+  logs:
+    sensor: ERROR  
+    adc: WARN      
+    mqtt: DEBUG    
+    text_sensor: ERROR
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "VFiK3NV71lGht7gONzWRo+xKZ6MKIgdT/DEmWgPBPCI="
+
+ota:
+  password: "8de4171f7e36e293ecc1fed07933f2fb"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Optional manual IP
+#  manual_ip:
+#    static_ip: 192.168.24.34
+#    gateway: 192.168.24.1
+#    subnet: 255.255.255.0
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Lamellensteuerung"
+    password: "eBw3ozzOtatB"
+
+# Enable Web server
+web_server:
+  port: 80
+
+globals:
+  # Positionszähler
+  - id: positions_zaehler
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+  - id: position_endlage_auf
+    type: int
+    restore_value: true
+    initial_value: '280'  # Standardwert
+
+text_sensor:
+  - platform: wifi_info
+    ip_address: 
+      name: IPAddress
+
+    bssid:
+      id: bssid_sensor  # ID für die BSSID
+      name: BSSID
+      
+    mac_address:
+      name: Mac
+
+  - platform: custom
+    lambda: |-
+      auto ap_name_sensor = new APNameTemplate();
+      ap_name_sensor->bssid_sensor = id(bssid_sensor);
+      App.register_component(ap_name_sensor);
+      return {ap_name_sensor};
+    text_sensors:
+      - name: "Access Point Name"
+
+  # Positionszähler
+  - platform: template
+    name: "Positionszähler"
+    lambda: |-
+      char buffer[10];
+      snprintf(buffer, sizeof(buffer), "%d", id(positions_zaehler));
+      return std::string(buffer);
+    update_interval: 1s
+
+  # Anzeige der aktuellen Endlage "Auf"-Position
+  - platform: template
+    name: "Position Endlage Auf"
+    lambda: |-
+      char buffer[10];
+      snprintf(buffer, sizeof(buffer), "%d", id(position_endlage_auf));
+      return std::string(buffer);
+
+mqtt:
+  # MQTT-Basis-Konfiguration
+  broker: 192.168.24.15
+  port: 1887
+  username: ESPHome
+  password: KAQa(?#5hfY?n$_H
+  discovery: true
+  discovery_retain: true
+  
+  on_message:
+    - topic: lamellensteuerung/position_endlage_auf/set
+      #qos: 0
+      then:
+        - lambda: |-
+            int value = atoi(x.c_str());  // Wert aus der Nachricht extrahieren
+            id(position_endlage_auf) = value;
+            ESP_LOGD("MQTT", "Neue Endlage-Auf-Position über MQTT gesetzt: %d", value);
+        # Optional: Den neuen Wert zurück an das MQTT-Topic publizieren
+        #- mqtt.publish:
+        #    topic: lammensteuerung/position_endlage_auf/esp
+        #    payload: !lambda |-
+        #      char buffer[10];
+        #      snprintf(buffer, sizeof(buffer), "%d", id(position_endlage_auf));
+        #      return std::string(buffer);
+
+
+captive_portal:
+
+output:
+  - platform: gpio
+    pin: GPIO5
+    id: WiFi_led
+    inverted: yes
+
+  - platform: gpio
+    pin: GPIO15
+    id: relay_pin_1
+
+  - platform: gpio
+    pin: GPIO14
+    id: relay_pin_2
+
+  - platform: gpio
+    pin: GPIO12
+    id: relay_pin_3
+
+  - platform: gpio
+    pin: GPIO13
+    id: relay_pin_4
+
+# Define the switches based on the relay pins
+switch:
+
+  - platform: restart
+    name: "ESP Neustart"
+    id: restart_switch
+
+  - platform: output
+    id: relay_1
+    name: "Relais 1"
+    output: relay_pin_1
+
+  - platform: output
+    id: relay_2
+    name: "Relais 2"
+    output: relay_pin_2
+      
+  - platform: output
+    id: relay_3
+    name: "Relais 3"
+    output: relay_pin_3
+      
+  - platform: output
+    id: relay_4
+    name: "Relais 4"
+    output: relay_pin_4
+
+  # Binary switch for "Lamelle auf"
+  - platform: template
+    name: "Lamelle auf"
+    id: lamelle_auf
+    optimistic: true
+    turn_on_action:
+      - if:
+          condition:
+            # Check if "Antrieb Überlast" is OFF
+            not:
+              switch.is_on: antrieb_ueberlast
+          then:
+            - switch.turn_off: lamelle_zu  # Ensure mutual exclusion
+            # Turn off relays only if they are on
+            - if:
+                condition:
+                  switch.is_on: relay_1
+                then:
+                  - switch.turn_off: relay_1
+            - if:
+                condition:
+                  switch.is_on: relay_4
+                then:
+                  - switch.turn_off: relay_4
+            # Immediately turn on the required relays
+            - switch.turn_on: relay_2
+            - switch.turn_on: relay_3
+          else:
+            - lambda: |-
+                ESP_LOGD("custom", "Lamelle konnte nicht geöffnet werden: Antrieb Überlast ist aktiv.");
+            - delay: 100ms
+            - switch.turn_off: lamelle_auf
+    turn_off_action:
+      # Ensure all related relays are off
+      - switch.turn_off: relay_2
+      - switch.turn_off: relay_3
+
+# Binary switch for "Lamelle zu"
+  - platform: template
+    name: "Lamelle zu"
+    id: lamelle_zu
+    optimistic: true
+    turn_on_action:
+      - if:
+          condition:
+            # Check if "Antrieb Überlast" is OFF
+            not:
+              switch.is_on: antrieb_ueberlast
+          then:
+            - switch.turn_off: lamelle_auf  # Ensure mutual exclusion
+            # Turn off relays only if they are on
+            - if:
+                condition:
+                  switch.is_on: relay_2
+                then:
+                  - switch.turn_off: relay_2
+            - if:
+                condition:
+                  switch.is_on: relay_3
+                then:
+                  - switch.turn_off: relay_3
+            # Immediately turn on the required relays
+            - switch.turn_on: relay_1
+            - switch.turn_on: relay_4
+          else:
+            - lambda: |-
+                ESP_LOGD("custom", "Lamelle zu konnte nicht geschlossen werden: Antrieb Überlast ist aktiv.");
+            - delay: 100ms
+            - switch.turn_off: lamelle_zu
+    turn_off_action:
+      # Ensure all related relays are off
+      - switch.turn_off: relay_1
+      - switch.turn_off: relay_4
+
+# Binary switch for "Antrieb Überlast"
+  - platform: template
+    name: "Antrieb Überlast"
+    id: antrieb_ueberlast
+    optimistic: true
+    turn_on_action:
+      - switch.turn_off: lamelle_auf  # Turn off related switches
+      - switch.turn_off: lamelle_zu
+      - lambda: |-
+          ESP_LOGD("custom", "Antrieb Überlast aktiviert.");
+    turn_off_action:
+      - lambda: |-
+          ESP_LOGD("custom", "Antrieb Überlast manuell zurückgesetzt.");
+
+
+binary_sensor:
+  - platform: template
+    name: "Endlage Lamellen Auf"
+    id: endlage_lamellen_auf
+    lambda: |-
+      // Aktiv, wenn der Antrieb aus ist und "Lamelle auf" aktiv bleibt
+      if (id(lamelle_auf).state && !id(antrieb_ein).state) {
+        return true;
+      }
+      // Deaktivieren, wenn der Motor in die entgegengesetzte Richtung bewegt
+      if (id(lamelle_zu).state && id(antrieb_ein).state) {
+        return false;
+      }
+      // Ansonsten aktuellen Status beibehalten
+      return id(endlage_lamellen_auf).state;
+    filters:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+
+    on_state:
+      then:
+        - if:
+            # Erst prüfen, ob diese Endlage tatsächlich erreicht ist ...
+            condition:
+              binary_sensor.is_on: endlage_lamellen_auf
+            then:
+              # ... und erst DANN checken, ob position_endlage_auf > 0 ist
+              - if:
+                  condition:
+                    lambda: |-
+                      return (id(position_endlage_auf) > 0);
+                  then:
+                    - lambda: |-
+                        // Positionszähler nur setzen, wenn > 0
+                        id(positions_zaehler) = id(position_endlage_auf);
+                        ESP_LOGD("Endlage", 
+                          "Endlage Lamellen Auf erreicht. Positionszähler auf %d gesetzt.", 
+                          id(position_endlage_auf));
+                  else:
+                    - lambda: |-
+                        ESP_LOGD("Endlage", 
+                          "Endlage Lamellen Auf erreicht, aber position_endlage_auf <= 0. Zähler NICHT gesetzt.");
+              - switch.turn_off: lamelle_auf  # Kommando Lamellen auf abschalten
+
+  # Endlage: Lamellen Zu
+  - platform: template
+    name: "Endlage Lamellen Zu"
+    id: endlage_lamellen_zu
+    lambda: |-
+      // Aktiv, wenn der Antrieb aus ist, Richtung Lamellen Zu aktiv bleibt
+      if (id(lamelle_zu).state && !id(antrieb_ein).state) {
+        return true;
+      }
+      // Deaktivieren, wenn der Motor in die entgegengesetzte Richtung bewegt
+      if (id(lamelle_auf).state && id(antrieb_ein).state) {
+        return false;
+      }
+      return id(endlage_lamellen_zu).state;  // Status beibehalten
+    filters:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    on_state:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_on: endlage_lamellen_zu
+            then:
+              - lambda: |-
+                  id(positions_zaehler) = 0;
+                  ESP_LOGD("Endlage", "Endlage Lamellen Zu erreicht. Positionszähler auf 0 gesetzt.");
+                  ESP_LOGD("Endlage", "Endlage Kommando Lamellen Zu ausgeschaltet.");
+              - switch.turn_off: lamelle_zu  # Kommando Lamellen zu abschalten
+              
+
+  # Meldung für "Antrieb ein"
+  - platform: template
+    name: "Antrieb Ein"
+    id: antrieb_ein
+    lambda: |-
+      if (id(antrieb_strom).state > 0.03) {
+        return true;
+      } else {
+        return false;
+      }
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+
+
+  # Automatisierung für "Antrieb Überlast"
+  - platform: template
+    name: "Überlast Automatik"
+    lambda: |-
+      return (id(antrieb_strom).state > 0.250);
+    filters:
+      - delayed_on: 250ms
+    on_press:
+      - switch.turn_on: antrieb_ueberlast  # Überlast einschalten
+      - lambda: |-
+          ESP_LOGD("custom", "Lamelle zu konnte nicht geschlossen werden: Antrieb Überlast ist aktiv.");
+      - delay: 100ms
+
+sensor:
+  # Spannung über Shunt messesn
+  - platform: adc
+    pin: A0
+    id: antrieb_strom
+    name: "Antrieb Strom"
+    update_interval: 25ms
+    accuracy_decimals: 2
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10  # Anzahl der Werte im Fenster
+          send_every: 1    # Wie oft ein neuer Wert gesendet wird
+
+  # Uptime
+  - platform: uptime
+    name: Uptime
+    id: uptime_sensor
+    update_interval: 1000ms
+
+interval:
+  # Positionszähler
+  - interval: 100ms
+    then:
+      - if:
+          condition:
+            # Prüfen, ob "Lamelle auf" und "Antrieb Ein" aktiv sind
+            and:
+              - switch.is_on: lamelle_auf
+              - binary_sensor.is_on: antrieb_ein
+          then:
+            # Zähler hochzählen
+            - lambda: |-
+                id(positions_zaehler) += 1;
+                ESP_LOGD("Positionszähler", "Hochgezählt: %d", id(positions_zaehler));
+      - if:
+          condition:
+            # Prüfen, ob "Lamelle zu" und "Antrieb Ein" aktiv sind
+            and:
+              - switch.is_on: lamelle_zu
+              - binary_sensor.is_on: antrieb_ein
+          then:
+            # Zähler herunterzählen
+            - lambda: |-
+                id(positions_zaehler) -= 1;
+                ESP_LOGD("Positionszähler", "Heruntergezählt: %d", id(positions_zaehler));
+       
+  # Wifi Sttus
+  - interval: 250ms
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - output.turn_on: WiFi_led
+        else:
+          - output.turn_on: WiFi_led
+          - delay: 125ms
+          - output.turn_off: WiFi_led        

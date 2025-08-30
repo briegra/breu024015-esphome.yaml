@@ -1,0 +1,113 @@
+esphome:
+  name: garage-rechts32
+  platform: ESP32
+  board: esp32dev
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: "vlBpyX#7jSI5"
+
+ota:
+  password: "vlBpyX#7jSI5"
+
+wifi:
+  ssid: "HIOT"
+  password: "28474172737459768132958148552971"
+  power_save_mode: none
+
+# Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Garage-Rechts32 Fallback Hotspot"
+    password: "AhoZYKG6kCza"
+
+# Enable Web server
+web_server:
+  port: 80
+    
+text_sensor:
+- platform: wifi_info
+  ip_address: 
+    name: IPAddress
+  ssid:
+    name: SSID
+  bssid:
+    name: BSSID
+  mac_address:
+    name: Mac    
+
+captive_portal:
+
+# I²C-Bus für den BME/BMP280 konfigurieren
+#i2c:
+#  sda: GPIO13
+#  scl: GPIO14
+#  scan: true  # Automatische Suche nach I²C-Geräten
+
+sensor:   
+    #Wifi SignalstÃ¤rke
+  - platform: wifi_signal
+    name: "WiFi Signal Sensor"
+    update_interval: 60s
+  
+binary_sensor:
+  - platform: gpio
+    name: Tor Offen
+    device_class: door
+    pin:
+      number: GPIO12
+      mode: INPUT_PULLUP  
+      inverted: yes
+      
+  - platform: gpio
+    name: Tor Geschlossen
+    device_class: door
+    pin:
+      number: GPIO13
+      mode: INPUT_PULLUP  
+      inverted: yes
+      
+  - platform: gpio
+    name: Antrieb Ein
+    device_class: door
+    pin:
+      number: GPIO16
+      mode: INPUT_PULLUP  
+      inverted: yes
+      
+switch: 
+  - platform: gpio
+    name: Tor Schliessen
+    id: TorSchliessen
+    pin: 
+      number: GPIO14
+      inverted: yes
+    on_turn_on:
+    - delay: 1000ms
+    - logger.log: "Auto_Off: TorSchließen"
+    - switch.turn_off: TorSchliessen
+      
+  - platform: gpio
+    name: Tor Lueften
+    id: TorLueften
+    pin: 
+      number: GPIO26
+      inverted: yes
+    on_turn_on:
+    - delay: 1000ms
+    - logger.log: "Auto_Off: TorLüften"
+    - switch.turn_off: TorLueften
+      
+  - platform: gpio
+    name: Tor Oeffnen
+    id: TorOeffnen
+    pin: 
+      number: GPIO27
+      inverted: yes
+    on_turn_on:
+    - delay: 1000ms
+    - logger.log: "Auto_Off: TorOeffnen"
+    - switch.turn_off: TorOeffnen
+  
