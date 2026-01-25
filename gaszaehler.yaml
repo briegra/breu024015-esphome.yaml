@@ -30,8 +30,7 @@ esphome:
           id(zaehler_gestern_sensor).publish_state(id(zaehler_gestern));
           id(zaehler_vormonat_sensor).publish_state(id(zaehler_VorMonat));
           id(init_done) = true;
-          ESP_LOGE("ESP", "Init durchgeführt");      
-
+          ESP_LOGE("ESP", "Init durchgeführt");
 
 # Enable persistent storage
 #preferences:
@@ -41,12 +40,14 @@ esphome:
 logger:
   level: WARN
   logs:
-    sensor: ERROR  
-    adc: WARN      
-    mqtt: WARN    
+    sensor: ERROR
+    adc: WARN
+    mqtt: WARN
     text_sensor: WARN
+
 ota:
-  password: "vlBpyX#7jSI5"
+  - platform: esphome
+    password: "vlBpyX#7jSI5"
 
 wifi:
   ssid: !secret wifi_ssid
@@ -54,7 +55,7 @@ wifi:
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
-    ssid: "$(devicename) Fallback Hotspot"
+    ssid: "${devicename} Fallback Hotspot"
     password: "wPsNYum3nwl9"
 
 web_server:
@@ -69,7 +70,7 @@ globals:
   - id: zustandszahl
     type: float
     restore_value: yes
-    initial_value: '0.9359'    
+    initial_value: '0.9359'
 
   # Reboot Counter
   - id: restart_counter
@@ -80,7 +81,7 @@ globals:
   - id: mqtt_first_message_processed
     type: bool
     restore_value: false
-    initial_value: "false"    
+    initial_value: "false"
 
   - id: init_done
     type: bool
@@ -155,7 +156,7 @@ globals:
   - id: negative_since
     type: float
     restore_value: no
-    initial_value: '0.0'  
+    initial_value: '0.0'
   - id: positive_since
     type: float
     restore_value: no
@@ -163,12 +164,12 @@ globals:
   - id: ready_to_count
     type: bool
     restore_value: no
-    initial_value: "false"   
+    initial_value: "false"
   - id: mag_x_counter
     type: int
     restore_value: no
-    initial_value: '0'     
-   
+    initial_value: '0'
+
 mqtt:
   id: mqtt_client
   topic_prefix: ${devicename}
@@ -190,7 +191,7 @@ mqtt:
             int new_value = atoi(x.c_str());
             id(zaehler_total) = new_value;
             id(zaehler_total_sensor).publish_state(id(zaehler_total));
-            ESP_LOGI("MQTT", "Zaehler wurde auf %d gesetzt", new_value);  
+            ESP_LOGI("MQTT", "Zaehler wurde auf %d gesetzt", new_value);
 
 time:
   - platform: sntp
@@ -200,7 +201,7 @@ time:
     on_time_sync:
       then:
         - logger.log: "SNTP-Zeit synchronisiert!"
-        - component.update: last_boot_time_sensor  
+        - component.update: last_boot_time_sensor
     on_time:
       - seconds: 59
         minutes: 59
@@ -257,7 +258,7 @@ sensor:
     name: "Restart Counter"
     id: restart_counter_sensor
     accuracy_decimals: 0
-    state_topic: ${devicename}/ESP/restart/counter"
+    state_topic: "${devicename}/ESP/restart/counter"
     update_interval: 1000ms
 
   - platform: template
@@ -276,7 +277,7 @@ sensor:
             float energie = volumen_m3 * id(brennwert) * id(zustandszahl);
 
             // Wert im "Energie Heute"-Sensor aktualisieren
-            id(gesamtenergie_sensor).publish_state(energie);    
+            id(gesamtenergie_sensor).publish_state(energie);
 
   - platform: template
     name: "Energie Gesamt"
@@ -289,7 +290,6 @@ sensor:
     name: "Magnetfeld-X"
     id: magnetfeld_x_sensor
     state_topic: "${devicename}/brenner/magnetfeld_x"
-
 
   - platform: template
     name: "Zähler Vormonat"
@@ -321,7 +321,7 @@ sensor:
             float energie = volumen_m3 * id(brennwert) * id(zustandszahl);
 
             // Wert im "Energie Heute"-Sensor aktualisieren
-            id(energie_heute_sensor).publish_state(energie);    
+            id(energie_heute_sensor).publish_state(energie);
 
   - platform: template
     name: "Energie Heute"
@@ -346,7 +346,7 @@ sensor:
             float energie = volumen_m3 * id(brennwert) * id(zustandszahl);
 
             // Wert im "Energie Heute"-Sensor aktualisieren
-            id(energie_gestern_sensor).publish_state(energie);    
+            id(energie_gestern_sensor).publish_state(energie);
 
   - platform: template
     name: "Energie Gestern"
@@ -372,7 +372,7 @@ sensor:
             float energie = volumen_m3 * id(brennwert) * id(zustandszahl);
 
             // Wert im "Energie Heute"-Sensor aktualisieren
-            id(energie_monat_sensor).publish_state(energie);   
+            id(energie_monat_sensor).publish_state(energie);
 
   - platform: template
     name: "Energie Monat"
@@ -397,7 +397,7 @@ sensor:
             float energie = volumen_m3 * id(brennwert) * id(zustandszahl);
 
             // Wert im "Energie Heute"-Sensor aktualisieren
-            id(energie_vorMonat_sensor).publish_state(energie);    
+            id(energie_vorMonat_sensor).publish_state(energie);
 
   - platform: template
     name: "Energie Vormonat"
@@ -519,13 +519,13 @@ text_sensor:
 
       char str[25];  // 🔹 Mehr Platz als nötig, um jede Ausgabe sicher aufzunehmen
       snprintf(str, sizeof(str), "%02u.%02u.%02u %02u:%02u:%02u",
-               (unsigned int) boot_time.day_of_month, 
-               (unsigned int) boot_time.month, 
+               (unsigned int) boot_time.day_of_month,
+               (unsigned int) boot_time.month,
                (unsigned int) (boot_time.year % 100),
-               (unsigned int) boot_time.hour, 
-               (unsigned int) boot_time.minute, 
+               (unsigned int) boot_time.hour,
+               (unsigned int) boot_time.minute,
                (unsigned int) boot_time.second);
-      return {str};    
+      return {str};
 
   - platform: wifi_info
     ip_address:
@@ -563,13 +563,12 @@ text_sensor:
           then:
             - mqtt.publish:
                 topic: "${devicename}/WiFi/AP_Name"
-                payload: !lambda 'return id(ap_name_sensor).state;' 
+                payload: !lambda 'return id(ap_name_sensor).state;'
 
   - platform: template
     name: "Uptime"
     id: uptime_string
     state_topic: "${devicename}/ESP/uptime"
-
 
 switch:
   - platform: template
@@ -582,17 +581,17 @@ switch:
     turn_on_action:
       - delay: 500ms
       - lambda: |
-          ESP_LOGE("Switch", "ESP wird jetzt neugestartet...");      
+          ESP_LOGE("Switch", "ESP wird jetzt neugestartet...");
           ESP.restart();
 
-# Flamme ein - kommt von ioBroker
+  # Flamme ein - kommt von ioBroker
   - platform: template
     name: "Flamme ist ein"
     id: brenner_ein
     optimistic: true
     retain: true
     state_topic: "${devicename}/brenner/state"
-    command_topic: "${devicename}/brenner/command"    
+    command_topic: "${devicename}/brenner/command"
     turn_off_action:
       - lambda: |-
           id(brenner_leistung_sensor).publish_state(0.0);
