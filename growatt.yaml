@@ -7,11 +7,9 @@ esphome:
   platform: ESP8266
   board: esp07s
 
-# Enable logging
 logger:
   baud_rate: 0
 
-# Enable Home Assistant API
 api:
   password: "vlBpyX#7jSI5"
 
@@ -25,12 +23,10 @@ wifi:
   fast_connect: true
   power_save_mode: none
 
-  # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Growatt 01 Fallback Hotspot"
     password: "FZ58x_^Y@RVku@S+"
 
-# Enable Web server
 web_server:
   port: 80
 
@@ -41,15 +37,12 @@ time:
     id: homeassistant_time
 
 output:
-  # Blue Led
   - id: light_bl
     platform: gpio
     pin: 16
-  # Green Led
   - id: light_gr
     platform: gpio
     pin: 0
-  # Red Led
   - id: light_rd
     platform: gpio
     pin: 2
@@ -66,11 +59,37 @@ modbus:
 
 modbus_controller:
   - id: growatt
-    address: 0x01            ## the Modbus device addr
+    address: 0x01
     modbus_id: modbus1
     setup_priority: -10
     update_interval: 5s
 
+# --- STEUERUNG (Holding Register SPA Serie) ---
+number:
+  - platform: modbus_controller
+    name: "${devicename} Grid Charge Power"
+    address: 1090
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "%"
+    min_value: 0
+    max_value: 100
+    step: 1
+
+  - platform: modbus_controller
+    name: "${devicename} Grid Charge Stopped SOC"
+    address: 1091
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "%"
+    min_value: 0
+    max_value: 100
+    step: 1
+
+# AC charge Switch When Bat First (1092) - nur lesen/anzeigen brauchst du aktuell schon (du hattest es als "AC Charge Switch (1092)")
+# ich lasse es unten als sensor drin; wenn du es als schaltbaren Switch willst, sagst du es explizit.
+
+# --- AUSLESEN (Input/Holding Register) ---
 text_sensor:
   - platform: modbus_controller
     name: "${devicename} Firmware Version"
@@ -85,6 +104,52 @@ text_sensor:
     register_count: 5
     register_type: holding
     entity_category: diagnostic
+
+  # Bat First Period 1 Start/Stop (1100/1101) als HH:MM dekodiert
+  - platform: template
+    name: "${devicename} Bat First Period 1 Start (decoded)"
+    lambda: |-
+      uint16_t v = (uint16_t) id(growatt_batfirst_p1_start_raw).state;
+      uint8_t hh = (v >> 8) & 0xFF;
+      uint8_t mm = v & 0xFF;
+      char buf[6];
+      snprintf(buf, sizeof(buf), "%02u:%02u", hh, mm);
+      return std::string(buf);
+    update_interval: 5s
+
+  - platform: template
+    name: "${devicename} Bat First Period 1 Stop (decoded)"
+    lambda: |-
+      uint16_t v = (uint16_t) id(growatt_batfirst_p1_stop_raw).state;
+      uint8_t hh = (v >> 8) & 0xFF;
+      uint8_t mm = v & 0xFF;
+      char buf[6];
+      snprintf(buf, sizeof(buf), "%02u:%02u", hh, mm);
+      return std::string(buf);
+    update_interval: 5s
+
+  # Load First Period 1 Start/Stop (1110/1111) als HH:MM dekodiert
+  - platform: template
+    name: "${devicename} Load First Period 1 Start (decoded)"
+    lambda: |-
+      uint16_t v = (uint16_t) id(growatt_loadfirst_p1_start_raw).state;
+      uint8_t hh = (v >> 8) & 0xFF;
+      uint8_t mm = v & 0xFF;
+      char buf[6];
+      snprintf(buf, sizeof(buf), "%02u:%02u", hh, mm);
+      return std::string(buf);
+    update_interval: 5s
+
+  - platform: template
+    name: "${devicename} Load First Period 1 Stop (decoded)"
+    lambda: |-
+      uint16_t v = (uint16_t) id(growatt_loadfirst_p1_stop_raw).state;
+      uint8_t hh = (v >> 8) & 0xFF;
+      uint8_t mm = v & 0xFF;
+      char buf[6];
+      snprintf(buf, sizeof(buf), "%02u:%02u", hh, mm);
+      return std::string(buf);
+    update_interval: 5s
 
 sensor:
   - platform: modbus_controller
@@ -190,7 +255,108 @@ sensor:
     filters:
       - multiply: 0.1
 
-  # Wifi Signalstärke
   - platform: wifi_signal
     name: "WiFi Signal Sensor"
     update_interval: 60s
+
+  # ---- Debug / RAW Register lesen (damit wir sehen, WARUM 1102 wieder fällt) ----
+  - platform: modbus_controller
+    id: growatt_priority_mode_1044
+    name: "growatt Priority Mode (1044)"
+    address: 1044
+    register_type: "read"
+    value_type: U_WORD
+
+  - platform: modbus_controller
+    name: "growatt AC Charge Switch (1092)"
+    address: 1092
+    register_type: "read"
+    value_type: U_WORD
+
+  # Bat First Period 1 Raw
+  - platform: modbus_controller
+    id: growatt_batfirst_p1_start_raw
+    name: "growatt Bat First Period 1 Start Raw (1100)"
+    address: 1100
+    register_type: "read"
+    value_type: U_WORD
+
+  - platform: modbus_controller
+    id: growatt_batfirst_p1_stop_raw
+    name: "growatt Bat First Period 1 Stop Raw (1101)"
+    address: 1101
+    register_type: "read"
+    value_type: U_WORD
+
+  - platform: modbus_controller
+    id: growatt_batfirst_p1_enable_raw
+    name: "growatt Bat First Period 1 Enable Raw (1102)"
+    address: 1102
+    register_type: "read"
+    value_type: U_WORD
+
+  # Load First Period 1 Raw
+  - platform: modbus_controller
+    id: growatt_loadfirst_p1_start_raw
+    name: "growatt Load First Period 1 Start Raw (1110)"
+    address: 1110
+    register_type: "read"
+    value_type: U_WORD
+
+  - platform: modbus_controller
+    id: growatt_loadfirst_p1_stop_raw
+    name: "growatt Load First Period 1 Stop Raw (1111)"
+    address: 1111
+    register_type: "read"
+    value_type: U_WORD
+
+  - platform: modbus_controller
+    id: growatt_loadfirst_p1_enable_raw
+    name: "growatt Load First Period 1 Enable Raw (1112)"
+    address: 1112
+    register_type: "read"
+    value_type: U_WORD
+
+switch:
+  # -----------------------------
+  # R/W – Bat First Period 1 Enable (1102)
+  # -----------------------------
+  - platform: modbus_controller
+    id: bat_first_p1_enable
+    name: "${devicename} R/W Bat First Period 1 Enable (1102)"
+    address: 1102
+    register_type: holding
+    lambda: |-
+      return x > 0;
+    write_lambda: |-
+      return x ? 1 : 0;
+
+  # -----------------------------
+  # R/W – Load First Period 1 Enable (1112)
+  # -----------------------------
+  - platform: modbus_controller
+    id: load_first_p1_enable
+    name: "${devicename} R/W Load First Period 1 Enable (1112)"
+    address: 1112
+    register_type: holding
+    lambda: |-
+      return x > 0;
+    write_lambda: |-
+      return x ? 1 : 0;
+
+  # -----------------------------
+  # R/W – Mode Toggle (nur Wrapper)
+  # ON  = Bat First
+  # OFF = Load First
+  # -----------------------------
+  - platform: template
+    id: mode_toggle
+    name: "${devicename} R/W Mode Toggle (Bat=ON / Load=OFF)"
+    lambda: |-
+      return id(bat_first_p1_enable).state;
+    turn_on_action:
+      - switch.turn_off: load_first_p1_enable
+      - switch.turn_on: bat_first_p1_enable
+    turn_off_action:
+      - switch.turn_off: bat_first_p1_enable
+      - switch.turn_on: load_first_p1_enable
