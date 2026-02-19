@@ -10,7 +10,7 @@ class APNameTemplate : public Component, public TextSensor {
     {"xx:yy:zz:aa:bb:cc", "Dummy"},
     {"62:62:8B:00:1D:42", "Garage"},
     {"6E:FF:7B:F2:67:66", "Lammellendach"},
-    {"82-F1-7E-74-F6-10", "Lounge"},
+    {"82:F1:7E:74:F6:10", "Lounge"},
     {"EA:C3:2A:9C:1A:B0", "Technik"},
     {"24:2F:D0:DF:4E:1C", "Grillplatz"},
     {"2E:2F:D0:DF:4E:1C", "Grillplatz"},

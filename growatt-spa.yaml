@@ -233,6 +233,47 @@ sensor:
     value_type: U_WORD
     internal: true
 
+  # GridFirst (nur Serie 1) - Debug / Web-UI
+  - platform: modbus_controller
+    modbus_controller_id: growatt
+    name: "Reg 1070 - GridFirst Discharge Power Rate"
+    address: 1070
+    register_type: holding
+    value_type: U_WORD
+    internal: true
+
+  - platform: modbus_controller
+    modbus_controller_id: growatt
+    name: "Reg 1071 - GridFirst Stop SOC"
+    address: 1071
+    register_type: holding
+    value_type: U_WORD
+    internal: true
+
+  - platform: modbus_controller
+    modbus_controller_id: growatt
+    name: "Reg 1080 - GridFirst Start 1"
+    address: 1080
+    register_type: holding
+    value_type: U_WORD
+    internal: true
+
+  - platform: modbus_controller
+    modbus_controller_id: growatt
+    name: "Reg 1081 - GridFirst Stop 1"
+    address: 1081
+    register_type: holding
+    value_type: U_WORD
+    internal: true
+
+  - platform: modbus_controller
+    modbus_controller_id: growatt
+    name: "Reg 1082 - GridFirst Enable 1"
+    address: 1082
+    register_type: holding
+    value_type: U_WORD
+    internal: true
+
   ###########################################################################
   # Messwerte (MQTT + Web-UI)
   ###########################################################################
@@ -372,6 +413,10 @@ text_sensor:
 
             using namespace esphome::modbus_controller;
 
+            // ----------------------------------------------------------------
+            // BatteryFirst (Legacy Keys)
+            // ----------------------------------------------------------------
+
             // 1090 - Charge Power Rate
             if (doc.containsKey("power_rate")) {
               int v = doc["power_rate"];
@@ -417,13 +462,129 @@ text_sensor:
               ESP_LOGW("MODBUS", "WRITE 1101 = %d", v);
             }
 
-            // 1102 - Bat First Enable
+            // 1102 - Bat First Enable (Legacy)
             if (doc.containsKey("bat_first")) {
               int v = doc["bat_first"];
               id(growatt).queue_command(
                 ModbusCommandItem::create_write_single_command(id(growatt), 1102, (uint16_t)v)
               );
               ESP_LOGW("MODBUS", "WRITE 1102 = %d", v);
+            }
+
+            // ----------------------------------------------------------------
+            // BatteryFirst (New Keys: bf_* ; Serie 1)
+            // ----------------------------------------------------------------
+
+            // 1090
+            if (doc.containsKey("bf_power_rate")) {
+              int v = doc["bf_power_rate"];
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_single_command(id(growatt), 1090, (uint16_t)v)
+              );
+              ESP_LOGW("MODBUS", "WRITE 1090 = %d", v);
+            }
+
+            // 1091
+            if (doc.containsKey("bf_stop_soc")) {
+              int v = doc["bf_stop_soc"];
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_single_command(id(growatt), 1091, (uint16_t)v)
+              );
+              ESP_LOGW("MODBUS", "WRITE 1091 = %d", v);
+            }
+
+            // 1092
+            if (doc.containsKey("bf_ac")) {
+              int v = doc["bf_ac"];
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_single_command(id(growatt), 1092, (uint16_t)v)
+              );
+              ESP_LOGW("MODBUS", "WRITE 1092 = %d", v);
+            }
+
+            // 1100
+            if (doc.containsKey("bf_start1")) {
+              int v = doc["bf_start1"];
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_single_command(id(growatt), 1100, (uint16_t)v)
+              );
+              ESP_LOGW("MODBUS", "WRITE 1100 = %d", v);
+            }
+
+            // 1101
+            if (doc.containsKey("bf_stop1")) {
+              int v = doc["bf_stop1"];
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_single_command(id(growatt), 1101, (uint16_t)v)
+              );
+              ESP_LOGW("MODBUS", "WRITE 1101 = %d", v);
+            }
+
+            // 1102
+            if (doc.containsKey("bf_en1")) {
+              int v = doc["bf_en1"];
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_single_command(id(growatt), 1102, (uint16_t)v)
+              );
+              ESP_LOGW("MODBUS", "WRITE 1102 = %d", v);
+            }
+
+            // ----------------------------------------------------------------
+            // GridFirst (New Keys: gf_* ; Serie 1)
+            // GridFirst Writes: Function Code 0x10 (Write Multiple) mit Count=1,
+            // weil der Slave FC06 (0x06) hier mit Exception 1 abgelehnt hat.
+            // ----------------------------------------------------------------
+
+            // 1070 - Discharge Power Rate
+            if (doc.containsKey("gf_power_rate")) {
+              uint16_t v = (uint16_t) (int) doc["gf_power_rate"];
+              std::vector<uint16_t> values{v};
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_multiple_command(id(growatt), 1070, (uint16_t)values.size(), values)
+              );
+              ESP_LOGW("MODBUS", "WRITE(0x10) 1070 = %u", v);
+            }
+
+            // 1071 - Stop SOC
+            if (doc.containsKey("gf_stop_soc")) {
+              uint16_t v = (uint16_t) (int) doc["gf_stop_soc"];
+              std::vector<uint16_t> values{v};
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_multiple_command(id(growatt), 1071, (uint16_t)values.size(), values)
+              );
+              ESP_LOGW("MODBUS", "WRITE(0x10) 1071 = %u", v);
+            }
+
+            // gf_ac ist nur Platzhalter fürs symmetrische JSON-Layout -> absichtlich ignoriert
+
+            // 1080 - Start 1
+            if (doc.containsKey("gf_start1")) {
+              uint16_t v = (uint16_t) (int) doc["gf_start1"];
+              std::vector<uint16_t> values{v};
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_multiple_command(id(growatt), 1080, (uint16_t)values.size(), values)
+              );
+              ESP_LOGW("MODBUS", "WRITE(0x10) 1080 = %u", v);
+            }
+
+            // 1081 - Stop 1
+            if (doc.containsKey("gf_stop1")) {
+              uint16_t v = (uint16_t) (int) doc["gf_stop1"];
+              std::vector<uint16_t> values{v};
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_multiple_command(id(growatt), 1081, (uint16_t)values.size(), values)
+              );
+              ESP_LOGW("MODBUS", "WRITE(0x10) 1081 = %u", v);
+            }
+
+            // 1082 - Enable 1
+            if (doc.containsKey("gf_en1")) {
+              uint16_t v = (uint16_t) (int) doc["gf_en1"];
+              std::vector<uint16_t> values{v};
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_multiple_command(id(growatt), 1082, (uint16_t)values.size(), values)
+              );
+              ESP_LOGW("MODBUS", "WRITE(0x10) 1082 = %u", v);
             }
 
   - platform: template
@@ -453,6 +614,41 @@ text_sensor:
     name: "ESP Uptime Formatted"
     id: uptime_string
     state_topic: "${mqtt_prefix}/ESP/uptime"
+
+  - platform: wifi_info
+    ip_address:
+      name: WiFi-IPAddress
+      state_topic: "${mqtt_prefix}/WiFi/IPAddress"
+    ssid:
+      name: WiFi-SSID
+      state_topic: "${mqtt_prefix}/WiFi/SSID"
+    bssid:
+      id: bssid_sensor
+      name: WiFi-BSSID
+      state_topic: "${mqtt_prefix}/WiFi/BSSID"
+    mac_address:
+      name: WiFi-MacAddress
+      state_topic: "${mqtt_prefix}/WiFi/MAC"
+
+  - platform: custom
+    lambda: |-
+      auto ap_name_sensor = new APNameTemplate();
+      ap_name_sensor->bssid_sensor = id(bssid_sensor);
+      App.register_component(ap_name_sensor);
+      return {ap_name_sensor};
+    text_sensors:
+      - name: "WiFi-Access Point Name"
+        id: ap_name_sensor
+        disabled_by_default: true
+        on_value:
+          then:
+            - if:
+                condition:
+                  lambda: 'return id(init_done);'
+                then:
+                  - mqtt.publish:
+                      topic: "${mqtt_prefix}/WiFi/AP_Name"
+                      payload: !lambda 'return id(ap_name_sensor).state;'
 
 switch:
   - platform: template
