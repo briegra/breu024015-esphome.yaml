@@ -200,7 +200,6 @@ sensor:
     value_type: U_WORD
     internal: true
 
-
   - platform: modbus_controller
     modbus_controller_id: growatt
     name: "Reg 1092 - AC Charge Switch"
@@ -250,43 +249,27 @@ sensor:
     value_type: U_WORD
     internal: true
 
-  # GridFirst - Protocol_II (Debug / Web-UI)
+  # GridFirst - SPA (Debug / Web-UI) - Readback
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 3036 - GridFirst Discharge Power Rate"
-    address: 3036
+    name: "Reg 1070 - GridFirst Discharge Power Rate (Readback)"
+    address: 1070
     register_type: holding
     value_type: U_WORD
     internal: true
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 3037 - GridFirst Stop SOC"
-    address: 3037
+    name: "Reg 1071 - GridFirst Stop SOC (Readback)"
+    address: 1071
     register_type: holding
     value_type: U_WORD
     internal: true
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 3038 - GridFirst Start 1"
-    address: 3038
-    register_type: holding
-    value_type: U_WORD
-    internal: true
-
-  - platform: modbus_controller
-    modbus_controller_id: growatt
-    name: "Reg 3039 - GridFirst Stop 1"
-    address: 3039
-    register_type: holding
-    value_type: U_WORD
-    internal: true
-
-  - platform: modbus_controller
-    modbus_controller_id: growatt
-    name: "Reg 3040 - GridFirst Enable 1"
-    address: 3040
+    name: "Reg 1082 - GridFirst Enable 1 (Readback)"
+    address: 1082
     register_type: holding
     value_type: U_WORD
     internal: true
@@ -465,32 +448,17 @@ text_sensor:
                 ESP_LOGW("MODBUS", "JSON enthält gf_* -> bf/legacy wird ignoriert");
               }
 
-              // ----------------------------------------------------------------
-              // Ensure Work Priority = Grid First
-              // Protocol_II documents BOTH:
-              // - 118  : Priority (0=LoadFirst, 1=BatFirst, 2=GridFirst)
-              // - 2118 : Priority (SPA range 2000..2124)
-              // We set both to 2 to avoid model/firmware differences.
-              // ----------------------------------------------------------------
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 118, (uint16_t)2)
-              );
-              ESP_LOGW("MODBUS", "WRITE 118 (Priority) = 2 (GridFirst)");
-
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 2118, (uint16_t)2)
-              );
-              ESP_LOGW("MODBUS", "WRITE 2118 (Priority) = 2 (GridFirst)");
-
-              // GridFirst (Protocol_II mapping): 3036..3040
+              // GridFirst (SPA mapping): 1070..1082 (Time1)
               // gf_ac ist nur Platzhalter fürs symmetrische JSON-Layout -> absichtlich ignoriert
+              // IMPORTANT: SPA rejects FC06 for these registers (Illegal Function) -> use FC16 (write multiple) with count=1
 
               if (doc.containsKey("gf_power_rate")) {
                 int v = doc["gf_power_rate"];
+                std::vector<uint16_t> values{(uint16_t)v};
                 id(growatt).queue_command(
-                  ModbusCommandItem::create_write_single_command(id(growatt), 3036, (uint16_t)v)
+                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1070, 1, values)
                 );
-                ESP_LOGW("MODBUS", "WRITE 3036 (GF PowerRate) = %d", v);
+                ESP_LOGW("MODBUS", "WRITE 1070 (GF PowerRate) = %d", v);
                 if (v == 0) {
                   ESP_LOGW("MODBUS", "Hinweis: gf_power_rate=0 -> keine Entladeleistung (0%%)");
                 }
@@ -498,10 +466,11 @@ text_sensor:
 
               if (doc.containsKey("gf_stop_soc")) {
                 int v = doc["gf_stop_soc"];
+                std::vector<uint16_t> values{(uint16_t)v};
                 id(growatt).queue_command(
-                  ModbusCommandItem::create_write_single_command(id(growatt), 3037, (uint16_t)v)
+                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1071, 1, values)
                 );
-                ESP_LOGW("MODBUS", "WRITE 3037 (GF StopSOC) = %d", v);
+                ESP_LOGW("MODBUS", "WRITE 1071 (GF StopSOC) = %d", v);
                 if (v >= 100) {
                   ESP_LOGW("MODBUS", "Hinweis: gf_stop_soc>=100 kann Entladung effektiv sofort stoppen");
                 }
@@ -509,26 +478,29 @@ text_sensor:
 
               if (doc.containsKey("gf_start1")) {
                 int v = doc["gf_start1"];
+                std::vector<uint16_t> values{(uint16_t)v};
                 id(growatt).queue_command(
-                  ModbusCommandItem::create_write_single_command(id(growatt), 3038, (uint16_t)v)
+                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1080, 1, values)
                 );
-                ESP_LOGW("MODBUS", "WRITE 3038 (GF Start1) = %d", v);
+                ESP_LOGW("MODBUS", "WRITE 1080 (GF Start1) = %d", v);
               }
 
               if (doc.containsKey("gf_stop1")) {
                 int v = doc["gf_stop1"];
+                std::vector<uint16_t> values{(uint16_t)v};
                 id(growatt).queue_command(
-                  ModbusCommandItem::create_write_single_command(id(growatt), 3039, (uint16_t)v)
+                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1081, 1, values)
                 );
-                ESP_LOGW("MODBUS", "WRITE 3039 (GF Stop1) = %d", v);
+                ESP_LOGW("MODBUS", "WRITE 1081 (GF Stop1) = %d", v);
               }
 
               if (doc.containsKey("gf_en1")) {
                 int v = doc["gf_en1"];
+                std::vector<uint16_t> values{(uint16_t)v};
                 id(growatt).queue_command(
-                  ModbusCommandItem::create_write_single_command(id(growatt), 3040, (uint16_t)v)
+                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1082, 1, values)
                 );
-                ESP_LOGW("MODBUS", "WRITE 3040 (GF Enable1) = %d", v);
+                ESP_LOGW("MODBUS", "WRITE 1082 (GF Enable1) = %d", v);
                 if (v == 0) {
                   ESP_LOGW("MODBUS", "Hinweis: gf_en1=0 -> Zeitfenster 1 deaktiviert");
                 }
@@ -722,6 +694,55 @@ text_sensor:
                       payload: !lambda 'return id(ap_name_sensor).state;'
 
 switch:
+
+  - platform: template
+    name: "Growatt Dump Holding 1000-1124"
+    id: dump_holding_1000_1124
+    optimistic: true
+    retain: false
+    turn_on_action:
+      - lambda: |-
+          using namespace esphome::modbus_controller;
+
+          // One-shot dump of holding registers 1000..1124 (125 regs) to MQTT as ONE JSON payload.
+          // Topic: ${mqtt_prefix}/debug/dump_1000_1124
+          const uint16_t start_addr = 1000;
+          const uint16_t count = 125;
+
+          id(growatt).queue_command(
+            ModbusCommandItem::create_read_command(
+              id(growatt),
+              ModbusRegisterType::HOLDING,
+              start_addr,
+              count,
+              [=](ModbusRegisterType register_type, uint16_t start_address, const std::vector<uint8_t> &data) {
+                // data should contain 2 bytes per register (big-endian)
+                const size_t expected = (size_t)count * 2;
+                if (data.size() < expected) {
+                  ESP_LOGW("DUMP", "Dump Response too small: got=%u expected=%u", (unsigned)data.size(), (unsigned)expected);
+                }
+
+                const std::string topic = std::string("${mqtt_prefix}") + "/debug/dump_1000_1124";
+
+                // Publish as ONE JSON payload
+                id(mqtt_client).publish_json(topic, [=](JsonObject root) {
+                  char key[8];
+                  const size_t regs_in_payload = std::min((size_t)count, data.size() / 2);
+                  for (size_t i = 0; i < regs_in_payload; i++) {
+                    const uint16_t reg = start_addr + (uint16_t)i;
+                    const uint16_t val = (uint16_t)((data[2*i] << 8) | data[2*i + 1]);
+                    snprintf(key, sizeof(key), "%u", (unsigned)reg);
+                    root[key] = val;
+                  }
+                });
+
+                ESP_LOGW("DUMP", "Published holding dump %u..%u to %s (regs=%u)", (unsigned)start_addr, (unsigned)(start_addr + count - 1), topic.c_str(), (unsigned)count);
+
+                // auto turn-off switch
+                id(dump_holding_1000_1124).turn_off();
+              }
+            )
+          );
   - platform: template
     name: "ESP Restart"
     id: restart_esp
