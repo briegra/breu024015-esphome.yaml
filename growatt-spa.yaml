@@ -186,6 +186,23 @@ sensor:
 
   - platform: modbus_controller
     modbus_controller_id: growatt
+    name: "Reg 118 - Work Priority (0=Load,1=Bat,2=Grid)"
+    address: 118
+    register_type: holding
+    value_type: U_WORD
+    internal: true
+
+  - platform: modbus_controller
+    modbus_controller_id: growatt
+    name: "Reg 2118 - Work Priority (SPA 2000..2124)"
+    address: 2118
+    register_type: holding
+    value_type: U_WORD
+    internal: true
+
+
+  - platform: modbus_controller
+    modbus_controller_id: growatt
     name: "Reg 1092 - AC Charge Switch"
     address: 1092
     register_type: holding
@@ -233,43 +250,43 @@ sensor:
     value_type: U_WORD
     internal: true
 
-  # GridFirst (nur Serie 1) - Debug / Web-UI
+  # GridFirst - Protocol_II (Debug / Web-UI)
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 1070 - GridFirst Discharge Power Rate"
-    address: 1070
+    name: "Reg 3036 - GridFirst Discharge Power Rate"
+    address: 3036
     register_type: holding
     value_type: U_WORD
     internal: true
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 1071 - GridFirst Stop SOC"
-    address: 1071
+    name: "Reg 3037 - GridFirst Stop SOC"
+    address: 3037
     register_type: holding
     value_type: U_WORD
     internal: true
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 1080 - GridFirst Start 1"
-    address: 1080
+    name: "Reg 3038 - GridFirst Start 1"
+    address: 3038
     register_type: holding
     value_type: U_WORD
     internal: true
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 1081 - GridFirst Stop 1"
-    address: 1081
+    name: "Reg 3039 - GridFirst Stop 1"
+    address: 3039
     register_type: holding
     value_type: U_WORD
     internal: true
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 1082 - GridFirst Enable 1"
-    address: 1082
+    name: "Reg 3040 - GridFirst Enable 1"
+    address: 3040
     register_type: holding
     value_type: U_WORD
     internal: true
@@ -414,6 +431,118 @@ text_sensor:
             using namespace esphome::modbus_controller;
 
             // ----------------------------------------------------------------
+            // Mutual Exclusion:
+            // - If any gf_* key is present -> process ONLY gf_* (bf + legacy ignored)
+            // - Else if any bf_* or legacy key is present -> process ONLY bf_* + legacy
+            // ----------------------------------------------------------------
+
+            const bool has_gf =
+              doc.containsKey("gf_power_rate") ||
+              doc.containsKey("gf_stop_soc")   ||
+              doc.containsKey("gf_ac")         ||
+              doc.containsKey("gf_start1")     ||
+              doc.containsKey("gf_stop1")      ||
+              doc.containsKey("gf_en1");
+
+            const bool has_bf_or_legacy =
+              // New bf_*
+              doc.containsKey("bf_power_rate") ||
+              doc.containsKey("bf_stop_soc")   ||
+              doc.containsKey("bf_ac")         ||
+              doc.containsKey("bf_start1")     ||
+              doc.containsKey("bf_stop1")      ||
+              doc.containsKey("bf_en1")        ||
+              // Legacy keys
+              doc.containsKey("power_rate")    ||
+              doc.containsKey("stop_soc")      ||
+              doc.containsKey("ac")            ||
+              doc.containsKey("start")         ||
+              doc.containsKey("stop")          ||
+              doc.containsKey("bat_first");
+
+            if (has_gf) {
+              if (has_bf_or_legacy) {
+                ESP_LOGW("MODBUS", "JSON enthält gf_* -> bf/legacy wird ignoriert");
+              }
+
+              // ----------------------------------------------------------------
+              // Ensure Work Priority = Grid First
+              // Protocol_II documents BOTH:
+              // - 118  : Priority (0=LoadFirst, 1=BatFirst, 2=GridFirst)
+              // - 2118 : Priority (SPA range 2000..2124)
+              // We set both to 2 to avoid model/firmware differences.
+              // ----------------------------------------------------------------
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_single_command(id(growatt), 118, (uint16_t)2)
+              );
+              ESP_LOGW("MODBUS", "WRITE 118 (Priority) = 2 (GridFirst)");
+
+              id(growatt).queue_command(
+                ModbusCommandItem::create_write_single_command(id(growatt), 2118, (uint16_t)2)
+              );
+              ESP_LOGW("MODBUS", "WRITE 2118 (Priority) = 2 (GridFirst)");
+
+              // GridFirst (Protocol_II mapping): 3036..3040
+              // gf_ac ist nur Platzhalter fürs symmetrische JSON-Layout -> absichtlich ignoriert
+
+              if (doc.containsKey("gf_power_rate")) {
+                int v = doc["gf_power_rate"];
+                id(growatt).queue_command(
+                  ModbusCommandItem::create_write_single_command(id(growatt), 3036, (uint16_t)v)
+                );
+                ESP_LOGW("MODBUS", "WRITE 3036 (GF PowerRate) = %d", v);
+                if (v == 0) {
+                  ESP_LOGW("MODBUS", "Hinweis: gf_power_rate=0 -> keine Entladeleistung (0%%)");
+                }
+              }
+
+              if (doc.containsKey("gf_stop_soc")) {
+                int v = doc["gf_stop_soc"];
+                id(growatt).queue_command(
+                  ModbusCommandItem::create_write_single_command(id(growatt), 3037, (uint16_t)v)
+                );
+                ESP_LOGW("MODBUS", "WRITE 3037 (GF StopSOC) = %d", v);
+                if (v >= 100) {
+                  ESP_LOGW("MODBUS", "Hinweis: gf_stop_soc>=100 kann Entladung effektiv sofort stoppen");
+                }
+              }
+
+              if (doc.containsKey("gf_start1")) {
+                int v = doc["gf_start1"];
+                id(growatt).queue_command(
+                  ModbusCommandItem::create_write_single_command(id(growatt), 3038, (uint16_t)v)
+                );
+                ESP_LOGW("MODBUS", "WRITE 3038 (GF Start1) = %d", v);
+              }
+
+              if (doc.containsKey("gf_stop1")) {
+                int v = doc["gf_stop1"];
+                id(growatt).queue_command(
+                  ModbusCommandItem::create_write_single_command(id(growatt), 3039, (uint16_t)v)
+                );
+                ESP_LOGW("MODBUS", "WRITE 3039 (GF Stop1) = %d", v);
+              }
+
+              if (doc.containsKey("gf_en1")) {
+                int v = doc["gf_en1"];
+                id(growatt).queue_command(
+                  ModbusCommandItem::create_write_single_command(id(growatt), 3040, (uint16_t)v)
+                );
+                ESP_LOGW("MODBUS", "WRITE 3040 (GF Enable1) = %d", v);
+                if (v == 0) {
+                  ESP_LOGW("MODBUS", "Hinweis: gf_en1=0 -> Zeitfenster 1 deaktiviert");
+                }
+              }
+
+              return;
+            }
+
+            if (!has_bf_or_legacy) {
+              // Nothing to do
+              return;
+            }
+
+            // ----------------------------------------------------------------
             // BatteryFirst (Legacy Keys)
             // ----------------------------------------------------------------
 
@@ -527,64 +656,6 @@ text_sensor:
                 ModbusCommandItem::create_write_single_command(id(growatt), 1102, (uint16_t)v)
               );
               ESP_LOGW("MODBUS", "WRITE 1102 = %d", v);
-            }
-
-            // ----------------------------------------------------------------
-            // GridFirst (New Keys: gf_* ; Serie 1)
-            // GridFirst Writes: Function Code 0x10 (Write Multiple) mit Count=1,
-            // weil der Slave FC06 (0x06) hier mit Exception 1 abgelehnt hat.
-            // ----------------------------------------------------------------
-
-            // 1070 - Discharge Power Rate
-            if (doc.containsKey("gf_power_rate")) {
-              uint16_t v = (uint16_t) (int) doc["gf_power_rate"];
-              std::vector<uint16_t> values{v};
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_multiple_command(id(growatt), 1070, (uint16_t)values.size(), values)
-              );
-              ESP_LOGW("MODBUS", "WRITE(0x10) 1070 = %u", v);
-            }
-
-            // 1071 - Stop SOC
-            if (doc.containsKey("gf_stop_soc")) {
-              uint16_t v = (uint16_t) (int) doc["gf_stop_soc"];
-              std::vector<uint16_t> values{v};
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_multiple_command(id(growatt), 1071, (uint16_t)values.size(), values)
-              );
-              ESP_LOGW("MODBUS", "WRITE(0x10) 1071 = %u", v);
-            }
-
-            // gf_ac ist nur Platzhalter fürs symmetrische JSON-Layout -> absichtlich ignoriert
-
-            // 1080 - Start 1
-            if (doc.containsKey("gf_start1")) {
-              uint16_t v = (uint16_t) (int) doc["gf_start1"];
-              std::vector<uint16_t> values{v};
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_multiple_command(id(growatt), 1080, (uint16_t)values.size(), values)
-              );
-              ESP_LOGW("MODBUS", "WRITE(0x10) 1080 = %u", v);
-            }
-
-            // 1081 - Stop 1
-            if (doc.containsKey("gf_stop1")) {
-              uint16_t v = (uint16_t) (int) doc["gf_stop1"];
-              std::vector<uint16_t> values{v};
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_multiple_command(id(growatt), 1081, (uint16_t)values.size(), values)
-              );
-              ESP_LOGW("MODBUS", "WRITE(0x10) 1081 = %u", v);
-            }
-
-            // 1082 - Enable 1
-            if (doc.containsKey("gf_en1")) {
-              uint16_t v = (uint16_t) (int) doc["gf_en1"];
-              std::vector<uint16_t> values{v};
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_multiple_command(id(growatt), 1082, (uint16_t)values.size(), values)
-              );
-              ESP_LOGW("MODBUS", "WRITE(0x10) 1082 = %u", v);
             }
 
   - platform: template
