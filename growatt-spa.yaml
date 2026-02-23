@@ -80,7 +80,80 @@ mqtt:
         - lambda: |-
             id(mqtt_json_receiver).publish_state(x);
 
+
+custom_component:
+  - lambda: |-
+      using namespace esphome::modbus_controller;
+
+      class GrowattHoldingDumper : public Component {
+       public:
+        ModbusController *ctrl{nullptr};
+        mqtt::MQTTClientComponent *mqttc{nullptr};
+
+        bool busy{false};
+        uint32_t last_trigger_ms{0};
+
+        void loop() override {
+          if (this->busy) return;
+          if (this->ctrl == nullptr || this->mqttc == nullptr) return;
+
+          // Trigger comes from a global bool set by the template switch.
+          if (!id(dump_request)) return;
+
+          // Debounce / avoid boot race
+          if (this->last_trigger_ms != 0 && (millis() - this->last_trigger_ms) < 200) return;
+          this->last_trigger_ms = millis();
+
+          // consume trigger
+          id(dump_request) = false;
+
+          this->busy = true;
+
+          const uint16_t start_addr = 1000;
+          const uint16_t count = 125;
+
+          this->ctrl->queue_command(
+            ModbusCommandItem::create_read_command(
+              this->ctrl,
+              ModbusRegisterType::HOLDING,
+              start_addr,
+              count,
+              [this, start_addr, count](ModbusRegisterType register_type, uint16_t start_address, const std::vector<uint8_t> &data) {
+                const std::string topic = std::string("${mqtt_prefix}") + "/debug/dump_1000_1124";
+
+                this->mqttc->publish_json(topic, [=](JsonObject root) {
+                  const size_t regs_in_payload = std::min((size_t)count, data.size() / 2);
+                  char key[8];
+                  for (size_t i = 0; i < regs_in_payload; i++) {
+                    const uint16_t reg = start_addr + (uint16_t)i;
+                    const uint16_t val = (uint16_t)((data[2*i] << 8) | data[2*i + 1]);
+                    snprintf(key, sizeof(key), "%u", (unsigned)reg);
+                    root[key] = val;
+                  }
+                });
+
+                ESP_LOGW("DUMP", "Published holding dump 1000..1124 to %s (regs=125)", topic.c_str());
+                this->busy = false;
+              }
+            )
+          );
+        }
+      };
+
+      auto *dumper = new GrowattHoldingDumper();
+      dumper->ctrl = id(growatt);
+      dumper->mqttc = id(mqtt_client);
+      return {dumper};
+    components:
+      - id: growatt_dumper
+
+
 globals:
+  - id: dump_request
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
   - id: init_done
     type: bool
     restore_value: false
@@ -210,7 +283,8 @@ sensor:
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 1090 - Charge Power Rate"
+    name: "Reg 1091
+            address: 1090 - Charge Power Rate"
     address: 1090
     register_type: holding
     value_type: U_WORD
@@ -413,222 +487,116 @@ text_sensor:
 
             using namespace esphome::modbus_controller;
 
-            // ----------------------------------------------------------------
-            // Mutual Exclusion:
-            // - If any gf_* key is present -> process ONLY gf_* (bf + legacy ignored)
-            // - Else if any bf_* or legacy key is present -> process ONLY bf_* + legacy
-            // ----------------------------------------------------------------
+            // Mode switching (Period 1):
+            // - GridFirst: 1080/1081 (Start/Stop) + 1082 (Enable)
+            // - BatFirst : 1100/1101 (Start/Stop) + 1102 (Enable)
+            // Mutual exclusion: if gf_en1 present, ignore bf keys.
 
-            const bool has_gf =
-              doc.containsKey("gf_power_rate") ||
-              doc.containsKey("gf_stop_soc")   ||
-              doc.containsKey("gf_ac")         ||
-              doc.containsKey("gf_start1")     ||
-              doc.containsKey("gf_stop1")      ||
-              doc.containsKey("gf_en1");
+            const bool has_gf = doc.containsKey("gf_en1");
+            const bool has_bf = doc.containsKey("bf_en1") || doc.containsKey("bat_first");
 
-            const bool has_bf_or_legacy =
-              // New bf_*
-              doc.containsKey("bf_power_rate") ||
-              doc.containsKey("bf_stop_soc")   ||
-              doc.containsKey("bf_ac")         ||
-              doc.containsKey("bf_start1")     ||
-              doc.containsKey("bf_stop1")      ||
-              doc.containsKey("bf_en1")        ||
-              // Legacy keys
-              doc.containsKey("power_rate")    ||
-              doc.containsKey("stop_soc")      ||
-              doc.containsKey("ac")            ||
-              doc.containsKey("start")         ||
-              doc.containsKey("stop")          ||
-              doc.containsKey("bat_first");
+            if (has_gf && has_bf) {
+              ESP_LOGW("MODBUS", "JSON enthält gf_en1 -> bf/bat_first wird ignoriert");
+            }
 
             if (has_gf) {
-              if (has_bf_or_legacy) {
-                ESP_LOGW("MODBUS", "JSON enthält gf_* -> bf/legacy wird ignoriert");
-              }
+              int v = (int) doc["gf_en1"];
 
-              // GridFirst (SPA mapping): 1070..1082 (Time1)
-              // gf_ac ist nur Platzhalter fürs symmetrische JSON-Layout -> absichtlich ignoriert
-              // IMPORTANT: SPA rejects FC06 for these registers (Illegal Function) -> use FC16 (write multiple) with count=1
+              // If GridFirst Period 1 is enabled, also set its time window from JSON:
+              // - 1080 = gf_start1
+              // - 1081 = gf_stop1
+              if (v == 1) {
+                if (doc.containsKey("gf_start1") && doc.containsKey("gf_stop1")) {
+                  int start1 = (int) doc["gf_start1"];
+                  int stop1  = (int) doc["gf_stop1"];
 
-              if (doc.containsKey("gf_power_rate")) {
-                int v = doc["gf_power_rate"];
-                std::vector<uint16_t> values{(uint16_t)v};
-                id(growatt).queue_command(
-                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1070, 1, values)
-                );
-                ESP_LOGW("MODBUS", "WRITE 1070 (GF PowerRate) = %d", v);
-                if (v == 0) {
-                  ESP_LOGW("MODBUS", "Hinweis: gf_power_rate=0 -> keine Entladeleistung (0%%)");
+                  {
+                    std::vector<uint16_t> values{(uint16_t) start1};
+                    id(growatt).queue_command(
+                      ModbusCommandItem::create_write_multiple_command(id(growatt), 1080, 1, values)
+                    );
+                  }
+                  ESP_LOGW("MODBUS", "WRITE 1080 (GF Start1) = %d", start1);
+
+                  {
+                    std::vector<uint16_t> values{(uint16_t) stop1};
+                    id(growatt).queue_command(
+                      ModbusCommandItem::create_write_multiple_command(id(growatt), 1081, 1, values)
+                    );
+                  }
+                  ESP_LOGW("MODBUS", "WRITE 1081 (GF Stop1) = %d", stop1);
+                } else {
+                  ESP_LOGW("MODBUS", "gf_en1=1 aber gf_start1/gf_stop1 fehlen -> Zeitfenster wird NICHT geschrieben");
                 }
               }
 
-              if (doc.containsKey("gf_stop_soc")) {
-                int v = doc["gf_stop_soc"];
-                std::vector<uint16_t> values{(uint16_t)v};
-                id(growatt).queue_command(
-                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1071, 1, values)
-                );
-                ESP_LOGW("MODBUS", "WRITE 1071 (GF StopSOC) = %d", v);
-                if (v >= 100) {
-                  ESP_LOGW("MODBUS", "Hinweis: gf_stop_soc>=100 kann Entladung effektiv sofort stoppen");
-                }
-              }
-
-              if (doc.containsKey("gf_start1")) {
-                int v = doc["gf_start1"];
-                std::vector<uint16_t> values{(uint16_t)v};
-                id(growatt).queue_command(
-                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1080, 1, values)
-                );
-                ESP_LOGW("MODBUS", "WRITE 1080 (GF Start1) = %d", v);
-              }
-
-              if (doc.containsKey("gf_stop1")) {
-                int v = doc["gf_stop1"];
-                std::vector<uint16_t> values{(uint16_t)v};
-                id(growatt).queue_command(
-                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1081, 1, values)
-                );
-                ESP_LOGW("MODBUS", "WRITE 1081 (GF Stop1) = %d", v);
-              }
-
-              if (doc.containsKey("gf_en1")) {
-                int v = doc["gf_en1"];
-                std::vector<uint16_t> values{(uint16_t)v};
+              {
+                std::vector<uint16_t> values{(uint16_t) v};
                 id(growatt).queue_command(
                   ModbusCommandItem::create_write_multiple_command(id(growatt), 1082, 1, values)
                 );
-                ESP_LOGW("MODBUS", "WRITE 1082 (GF Enable1) = %d", v);
-                if (v == 0) {
-                  ESP_LOGW("MODBUS", "Hinweis: gf_en1=0 -> Zeitfenster 1 deaktiviert");
+              }
+              ESP_LOGW("MODBUS", "WRITE 1082 (GF Enable1) = %d", v);
+              return;
+            }
+
+            if (has_bf) {
+              int v = doc.containsKey("bf_en1") ? (int) doc["bf_en1"] : (int) doc["bat_first"];
+
+              // If BatteryFirst Period 1 is enabled, also set its time window from JSON:
+              // - 1100 = bf_start1
+              // - 1101 = bf_stop1
+              if (v == 1) {
+                // When enabling BatteryFirst Period 1, also apply charge power rate from JSON.
+                // 1090 = Charge Power Rate (0..100)
+                if (doc.containsKey("bf_power_rate")) {
+                  int pr = (int) doc["bf_power_rate"];
+                  {
+                    std::vector<uint16_t> values{(uint16_t) pr};
+                    id(growatt).queue_command(
+                      ModbusCommandItem::create_write_multiple_command(id(growatt), 1090, 1, values)
+                    );
+                  }
+                  ESP_LOGW("MODBUS", "WRITE 1090 (BF PowerRate) = %d", pr);
+                } else {
+                  ESP_LOGW("MODBUS", "bf_en1=1 aber bf_power_rate fehlt -> 1090 wird NICHT geschrieben");
+                }
+
+                if (doc.containsKey("bf_start1") && doc.containsKey("bf_stop1")) {
+                  int start1 = (int) doc["bf_start1"];
+                  int stop1  = (int) doc["bf_stop1"];
+
+                  {
+                    std::vector<uint16_t> values{(uint16_t) start1};
+                    id(growatt).queue_command(
+                      ModbusCommandItem::create_write_multiple_command(id(growatt), 1100, 1, values)
+                    );
+                  }
+                  ESP_LOGW("MODBUS", "WRITE 1100 (BF Start1) = %d", start1);
+
+                  {
+                    std::vector<uint16_t> values{(uint16_t) stop1};
+                    id(growatt).queue_command(
+                      ModbusCommandItem::create_write_multiple_command(id(growatt), 1101, 1, values)
+                    );
+                  }
+                  ESP_LOGW("MODBUS", "WRITE 1101 (BF Stop1) = %d", stop1);
+                } else {
+                  ESP_LOGW("MODBUS", "bf_en1=1 aber bf_start1/bf_stop1 fehlen -> Zeitfenster wird NICHT geschrieben");
                 }
               }
 
+              {
+                std::vector<uint16_t> values{(uint16_t) v};
+                id(growatt).queue_command(
+                  ModbusCommandItem::create_write_multiple_command(id(growatt), 1102, 1, values)
+                );
+              }
+              ESP_LOGW("MODBUS", "WRITE 1102 (BF Enable1) = %d", v);
               return;
             }
 
-            if (!has_bf_or_legacy) {
-              // Nothing to do
-              return;
-            }
-
-            // ----------------------------------------------------------------
-            // BatteryFirst (Legacy Keys)
-            // ----------------------------------------------------------------
-
-            // 1090 - Charge Power Rate
-            if (doc.containsKey("power_rate")) {
-              int v = doc["power_rate"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1090, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1090 = %d", v);
-            }
-
-            // 1091 - Charge Stopped SOC
-            if (doc.containsKey("stop_soc")) {
-              int v = doc["stop_soc"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1091, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1091 = %d", v);
-            }
-
-            // 1092 - AC Charge
-            if (doc.containsKey("ac")) {
-              int v = doc["ac"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1092, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1092 = %d", v);
-            }
-
-            // 1100 - Start Time
-            if (doc.containsKey("start")) {
-              int v = doc["start"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1100, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1100 = %d", v);
-            }
-
-            // 1101 - Stop Time
-            if (doc.containsKey("stop")) {
-              int v = doc["stop"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1101, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1101 = %d", v);
-            }
-
-            // 1102 - Bat First Enable (Legacy)
-            if (doc.containsKey("bat_first")) {
-              int v = doc["bat_first"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1102, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1102 = %d", v);
-            }
-
-            // ----------------------------------------------------------------
-            // BatteryFirst (New Keys: bf_* ; Serie 1)
-            // ----------------------------------------------------------------
-
-            // 1090
-            if (doc.containsKey("bf_power_rate")) {
-              int v = doc["bf_power_rate"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1090, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1090 = %d", v);
-            }
-
-            // 1091
-            if (doc.containsKey("bf_stop_soc")) {
-              int v = doc["bf_stop_soc"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1091, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1091 = %d", v);
-            }
-
-            // 1092
-            if (doc.containsKey("bf_ac")) {
-              int v = doc["bf_ac"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1092, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1092 = %d", v);
-            }
-
-            // 1100
-            if (doc.containsKey("bf_start1")) {
-              int v = doc["bf_start1"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1100, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1100 = %d", v);
-            }
-
-            // 1101
-            if (doc.containsKey("bf_stop1")) {
-              int v = doc["bf_stop1"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1101, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1101 = %d", v);
-            }
-
-            // 1102
-            if (doc.containsKey("bf_en1")) {
-              int v = doc["bf_en1"];
-              id(growatt).queue_command(
-                ModbusCommandItem::create_write_single_command(id(growatt), 1102, (uint16_t)v)
-              );
-              ESP_LOGW("MODBUS", "WRITE 1102 = %d", v);
-            }
+            // Nothing to do
 
   - platform: template
     name: "ESP Restart Time"
@@ -702,47 +670,9 @@ switch:
     retain: false
     turn_on_action:
       - lambda: |-
-          using namespace esphome::modbus_controller;
-
-          // One-shot dump of holding registers 1000..1124 (125 regs) to MQTT as ONE JSON payload.
-          // Topic: ${mqtt_prefix}/debug/dump_1000_1124
-          const uint16_t start_addr = 1000;
-          const uint16_t count = 125;
-
-          id(growatt).queue_command(
-            ModbusCommandItem::create_read_command(
-              id(growatt),
-              ModbusRegisterType::HOLDING,
-              start_addr,
-              count,
-              [=](ModbusRegisterType register_type, uint16_t start_address, const std::vector<uint8_t> &data) {
-                // data should contain 2 bytes per register (big-endian)
-                const size_t expected = (size_t)count * 2;
-                if (data.size() < expected) {
-                  ESP_LOGW("DUMP", "Dump Response too small: got=%u expected=%u", (unsigned)data.size(), (unsigned)expected);
-                }
-
-                const std::string topic = std::string("${mqtt_prefix}") + "/debug/dump_1000_1124";
-
-                // Publish as ONE JSON payload
-                id(mqtt_client).publish_json(topic, [=](JsonObject root) {
-                  char key[8];
-                  const size_t regs_in_payload = std::min((size_t)count, data.size() / 2);
-                  for (size_t i = 0; i < regs_in_payload; i++) {
-                    const uint16_t reg = start_addr + (uint16_t)i;
-                    const uint16_t val = (uint16_t)((data[2*i] << 8) | data[2*i + 1]);
-                    snprintf(key, sizeof(key), "%u", (unsigned)reg);
-                    root[key] = val;
-                  }
-                });
-
-                ESP_LOGW("DUMP", "Published holding dump %u..%u to %s (regs=%u)", (unsigned)start_addr, (unsigned)(start_addr + count - 1), topic.c_str(), (unsigned)count);
-
-                // auto turn-off switch
-                id(dump_holding_1000_1124).turn_off();
-              }
-            )
-          );
+          id(dump_request) = true;
+      - delay: 500ms
+      - switch.turn_off: dump_holding_1000_1124
   - platform: template
     name: "ESP Restart"
     id: restart_esp
