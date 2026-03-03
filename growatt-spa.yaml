@@ -97,20 +97,27 @@ custom_component:
           if (this->busy) return;
           if (this->ctrl == nullptr || this->mqttc == nullptr) return;
 
-          // Trigger comes from a global bool set by the template switch.
-          if (!id(dump_request)) return;
+          // Trigger comes from global bools set by the template switches.
+          const bool do_low  = id(dump_request_0000_0124);
+          const bool do_high = id(dump_request);
+
+          if (!do_low && !do_high) return;
 
           // Debounce / avoid boot race
           if (this->last_trigger_ms != 0 && (millis() - this->last_trigger_ms) < 200) return;
           this->last_trigger_ms = millis();
 
           // consume trigger
-          id(dump_request) = false;
+          if (do_low)  id(dump_request_0000_0124) = false;
+          if (do_high) id(dump_request) = false;
 
           this->busy = true;
 
-          const uint16_t start_addr = 1000;
+          const uint16_t start_addr = do_low ? 0 : 1000;
           const uint16_t count = 125;
+
+          const std::string topic = std::string("${mqtt_prefix}") + (do_low ? "/debug/dump_0000_0124" : "/debug/dump_1000_1124");
+          const char *range_label = do_low ? "0000..0124" : "1000..1124";
 
           this->ctrl->queue_command(
             ModbusCommandItem::create_read_command(
@@ -118,8 +125,7 @@ custom_component:
               ModbusRegisterType::HOLDING,
               start_addr,
               count,
-              [this, start_addr, count](ModbusRegisterType register_type, uint16_t start_address, const std::vector<uint8_t> &data) {
-                const std::string topic = std::string("${mqtt_prefix}") + "/debug/dump_1000_1124";
+              [this, start_addr, count, topic, range_label](ModbusRegisterType register_type, uint16_t start_address, const std::vector<uint8_t> &data) {
 
                 this->mqttc->publish_json(topic, [=](JsonObject root) {
                   const size_t regs_in_payload = std::min((size_t)count, data.size() / 2);
@@ -132,7 +138,7 @@ custom_component:
                   }
                 });
 
-                ESP_LOGW("DUMP", "Published holding dump 1000..1124 to %s (regs=125)", topic.c_str());
+                ESP_LOGW("DUMP", "Published holding dump %s to %s (regs=%u)", range_label, topic.c_str(), (unsigned)count);
                 this->busy = false;
               }
             )
@@ -150,6 +156,11 @@ custom_component:
 
 globals:
   - id: dump_request
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+  - id: dump_request_0000_0124
     type: bool
     restore_value: false
     initial_value: "false"
@@ -283,8 +294,7 @@ sensor:
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Reg 1091
-            address: 1090 - Charge Power Rate"
+    name: "Reg 1090 - Charge Power Rate"
     address: 1090
     register_type: holding
     value_type: U_WORD
@@ -487,6 +497,23 @@ text_sensor:
 
             using namespace esphome::modbus_controller;
 
+            // NEW: Active P Rate (Holding Register 3)
+            // - Accepts: {"active_p_rate": 0..100}
+            // - Writes:  holding register 3
+            if (doc.containsKey("active_p_rate")) {
+              int apr = (int) doc["active_p_rate"];
+              if (apr < 0) apr = 0;
+              if (apr > 100) apr = 100;
+
+              {
+                std::vector<uint16_t> values{(uint16_t) apr};
+                id(growatt).queue_command(
+                  ModbusCommandItem::create_write_multiple_command(id(growatt), 3, 1, values)
+                );
+              }
+              ESP_LOGW("MODBUS", "WRITE 3 (Active P Rate) = %d", apr);
+            }
+
             // Mode switching (Period 1):
             // - GridFirst: 1080/1081 (Start/Stop) + 1082 (Enable)
             // - BatFirst : 1100/1101 (Start/Stop) + 1102 (Enable)
@@ -673,6 +700,18 @@ switch:
           id(dump_request) = true;
       - delay: 500ms
       - switch.turn_off: dump_holding_1000_1124
+
+  - platform: template
+    name: "Growatt Dump Holding 0000-0124"
+    id: dump_holding_0000_0124
+    optimistic: true
+    retain: false
+    turn_on_action:
+      - lambda: |-
+          id(dump_request_0000_0124) = true;
+      - delay: 500ms
+      - switch.turn_off: dump_holding_0000_0124
+
   - platform: template
     name: "ESP Restart"
     id: restart_esp
