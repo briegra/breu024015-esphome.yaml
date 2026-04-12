@@ -300,7 +300,6 @@ sensor:
     value_type: U_WORD
     internal: true
 
-  # Offset-Test (nur Sichtbarkeit/Debug in Web-UI)
   - platform: modbus_controller
     modbus_controller_id: growatt
     name: "Reg 1089 - Charge Power Rate (Offset Test)"
@@ -333,7 +332,6 @@ sensor:
     value_type: U_WORD
     internal: true
 
-  # GridFirst - SPA (Debug / Web-UI) - Readback
   - platform: modbus_controller
     modbus_controller_id: growatt
     name: "Reg 1070 - GridFirst Discharge Power Rate (Readback)"
@@ -359,7 +357,7 @@ sensor:
     internal: true
 
   ###########################################################################
-  # Messwerte (MQTT + Web-UI)
+  # Messwerte (Input Register - MQTT + Web-UI)
   ###########################################################################
 
   - platform: modbus_controller
@@ -369,6 +367,7 @@ sensor:
     register_type: "read"
     value_type: U_WORD
     unit_of_measurement: "%"
+    # Quelle: Register 1014 (SOC)
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -380,6 +379,7 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1009/1010 (Pdischarge1)
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -391,6 +391,7 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1011/1012 (Pcharge1)
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -402,6 +403,7 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1040
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -409,6 +411,7 @@ sensor:
     address: 1041
     register_type: "read"
     value_type: U_WORD
+    # Quelle: Register 1041
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -420,6 +423,7 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1048/1049
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -431,6 +435,7 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1050/1051
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -442,6 +447,7 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1052/1053
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -453,6 +459,7 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1054/1055
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -464,18 +471,33 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1056/1057
+
+  ###########################################################################
+  # GRID POWER (BEZUG / IMPORT) - Gesamt & Phasen
+  ###########################################################################
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Charge energy1 - total"
-    address: 1058
+    name: "Power to User - Total"
+    address: 1021
     register_type: "read"
     value_type: U_DWORD
-    unit_of_measurement: "kWh"
+    unit_of_measurement: "W"
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+    # Quelle: Register 1021/1022 (Pactouser Total)
 
+  - platform: modbus_controller
+    modbus_controller_id: growatt
+    name: "Power to User - Phase R"
+    address: 1015
+    register_type: "read"
+    value_type: U_DWORD
+    unit_of_measurement: "W"
+    accuracy_decimals: 1
+    
 ############################################################################################################################################
 # TEXT SENSOR
 ############################################################################################################################################
