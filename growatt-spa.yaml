@@ -1,3 +1,8 @@
+########################################
+##
+## ESP-Growatt-SPA-2026-04-12-04
+##
+########################################
 substitutions:
   devicename: "growatt-spa"
   friendly_name: "Growatt SPA"
@@ -300,6 +305,7 @@ sensor:
     value_type: U_WORD
     internal: true
 
+  # Offset-Test (nur Sichtbarkeit/Debug in Web-UI)
   - platform: modbus_controller
     modbus_controller_id: growatt
     name: "Reg 1089 - Charge Power Rate (Offset Test)"
@@ -332,6 +338,7 @@ sensor:
     value_type: U_WORD
     internal: true
 
+  # GridFirst - SPA (Debug / Web-UI) - Readback
   - platform: modbus_controller
     modbus_controller_id: growatt
     name: "Reg 1070 - GridFirst Discharge Power Rate (Readback)"
@@ -357,7 +364,7 @@ sensor:
     internal: true
 
   ###########################################################################
-  # Messwerte (Input Register - MQTT + Web-UI)
+  # Messwerte (MQTT + Web-UI)
   ###########################################################################
 
   - platform: modbus_controller
@@ -367,7 +374,6 @@ sensor:
     register_type: "read"
     value_type: U_WORD
     unit_of_measurement: "%"
-    # Quelle: Register 1014 (SOC)
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -379,7 +385,6 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1009/1010 (Pdischarge1)
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -391,7 +396,6 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1011/1012 (Pcharge1)
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -403,7 +407,6 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1040
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -411,7 +414,6 @@ sensor:
     address: 1041
     register_type: "read"
     value_type: U_WORD
-    # Quelle: Register 1041
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -423,7 +425,6 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1048/1049
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -435,7 +436,6 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1050/1051
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -447,7 +447,6 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1052/1053
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -459,7 +458,6 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1054/1055
 
   - platform: modbus_controller
     modbus_controller_id: growatt
@@ -471,15 +469,23 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1056/1057
-
-  ###########################################################################
-  # GRID POWER (BEZUG / IMPORT) - Gesamt & Phasen
-  ###########################################################################
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Power to User - Total"
+    name: "Charge energy1 - total"
+    address: 1058
+    register_type: "read"
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+
+# NETZLEISTUNG (GRID POWER) - Gesamt
+  - platform: modbus_controller
+    modbus_controller_id: growatt
+    name: "Leistungsbezug"
+    id: leistungsbezug
     address: 1021
     register_type: "read"
     value_type: U_DWORD
@@ -487,17 +493,36 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-    # Quelle: Register 1021/1022 (Pactouser Total)
+    on_value:
+      then:
+        - component.update: power2grid
 
   - platform: modbus_controller
     modbus_controller_id: growatt
-    name: "Power to User - Phase R"
-    address: 1015
+    name: "Leistungsabgabe"
+    id: leistungsabgabe
+    address: 1029
     register_type: "read"
     value_type: U_DWORD
     unit_of_measurement: "W"
     accuracy_decimals: 1
-    
+    filters:
+      - multiply: 0.1
+    on_value:
+      then:
+        - component.update: power2grid
+
+  - platform: template
+    name: "Power2Grid"
+    id: power2grid
+    unit_of_measurement: "W"
+    accuracy_decimals: 1
+    lambda: |-
+      if (std::isnan(id(leistungsbezug).state) || std::isnan(id(leistungsabgabe).state)) {
+        return {};
+      }
+      // Positiv bei Bezug (User), Negativ bei Abgabe (Grid)
+      return id(leistungsbezug).state - id(leistungsabgabe).state;
 ############################################################################################################################################
 # TEXT SENSOR
 ############################################################################################################################################
