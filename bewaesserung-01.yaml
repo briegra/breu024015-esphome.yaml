@@ -43,7 +43,7 @@ wifi:
     ssid: "${ap_fallback}"
     password: "wPsNYum3nwl9"
 
-# Optional manual IP
+#Optional manual IP
 #  manual_ip:
 #    static_ip: 192.168.24.250
 #    gateway: 192.168.24.1
