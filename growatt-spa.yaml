@@ -4,6 +4,8 @@
 ##
 ########################################
 substitutions:
+  register_cycle_pause_ms: "60000"
+  register_response_timeout_ms: "30000"
   devicename: "growatt-spa"
   friendly_name: "Growatt SPA"
   mqtt_prefix: "growatt-spa"
@@ -159,7 +161,178 @@ custom_component:
       - id: growatt_dumper
 
 
+  # Cyclic JSON register reader, implemented entirely in this lambda.
+  - lambda: |-
+      class GrowattRegisterSampler : public esphome::Component {
+       public:
+        esphome::modbus_controller::ModbusController *ctrl{nullptr};
+        esphome::mqtt::MQTTClientComponent *mqttc{nullptr};
+        const std::string *config{nullptr};
+        std::string topic;
+        uint32_t cycle_pause_ms{60000};
+        uint32_t response_timeout_ms{30000};
+
+        float get_setup_priority() const override { return -100.0f; }
+
+        void setup() override {
+          if (ctrl == nullptr || mqttc == nullptr || config == nullptr) {
+            fail_("Missing configuration");
+            return;
+          }
+          // Temporary JSON tree; only compact register records remain after setup.
+          DynamicJsonDocument doc(4096);
+          if (deserializeJson(doc, *config) || !doc.is<JsonArray>()) {
+            fail_("Register list must be a JSON array");
+            return;
+          }
+          JsonArray array = doc.as<JsonArray>();
+          if (array.size() == 0 || array.size() > 32) {
+            fail_("Register list must contain 1..32 entries");
+            return;
+          }
+          entries_.reserve(array.size());
+          for (JsonVariant item : array) {
+            if (!item.is<JsonObject>() || !item["address"].is<int>()) {
+              fail_("Each register needs an integer address");
+              return;
+            }
+            const int address = item["address"].as<int>();
+            const char *type = item["type"] | "input";
+            if (address < 0 || address > 65535 ||
+                (strcmp(type, "input") != 0 && strcmp(type, "holding") != 0)) {
+              fail_("Invalid register address/type");
+              return;
+            }
+            for (const auto &entry : entries_) {
+              if (entry.address == address) {
+                fail_("Duplicate address: numeric MQTT keys must be unique");
+                return;
+              }
+            }
+            if (!item["scale"].isNull() && !item["scale"].is<double>()) {
+              fail_("Scale must be numeric");
+              return;
+            }
+            Entry entry;
+            entry.address = static_cast<uint16_t>(address);
+            entry.holding = strcmp(type, "holding") == 0;
+            entry.scale = item["scale"] | 1.0;
+            if (!std::isfinite(entry.scale)) {
+              fail_("Scale must be finite");
+              return;
+            }
+            entries_.push_back(entry);
+          }
+          last_finished_ms_ = millis();
+          ready_ = true;
+        }
+
+        void loop() override {
+          if (!ready_) return;
+          const uint32_t now = millis();
+          if (!active_) {
+            const uint32_t pause = first_cycle_ ? 10000 : cycle_pause_ms;
+            if (now - last_finished_ms_ < pause || !mqttc->is_connected()) return;
+            first_cycle_ = false;
+            active_ = true;
+            index_ = 0;
+            for (auto &entry : entries_) entry.valid = false;
+          }
+
+          if (waiting_) {
+            // Includes time spent in the shared controller queue and its retries.
+            if (now - requested_ms_ < response_timeout_ms) return;
+            ESP_LOGW("reg_json", "Timeout register %u", entries_[index_].address);
+            ++token_;  // Late responses must never enter a later cycle.
+            waiting_ = false;
+            ++index_;
+          }
+
+          if (index_ == entries_.size()) {
+            // No stale batch is replayed after an MQTT outage. Start fresh next cycle.
+            const bool sent = mqttc->publish_json(topic, [this](JsonObject root) {
+              char key[6];
+              for (const auto &entry : entries_) {
+                snprintf(key, sizeof(key), "%u", static_cast<unsigned>(entry.address));
+                if (!entry.valid) root[key] = nullptr;
+                else if (entry.scale == 1.0f) root[key] = entry.raw;
+                else root[key] = static_cast<double>(entry.raw) * entry.scale;
+              }
+            });
+            if (!sent) ESP_LOGW("reg_json", "MQTT batch not sent");
+            active_ = false;
+            last_finished_ms_ = now;
+            return;
+          }
+
+          const size_t slot = index_;
+          const uint32_t token = ++token_;
+          const auto &entry = entries_[slot];
+          waiting_ = true;
+          requested_ms_ = now;
+          using namespace esphome::modbus_controller;
+          ctrl->queue_command(ModbusCommandItem::create_read_command(
+            ctrl, entry.holding ? ModbusRegisterType::HOLDING : ModbusRegisterType::READ,
+            entry.address, 1,
+            [this, slot, token](ModbusRegisterType, uint16_t address,
+                                const std::vector<uint8_t> &data) {
+              if (!active_ || !waiting_ || token != token_ || slot != index_) return;
+              auto &result = entries_[slot];
+              if (address == result.address && data.size() == 2) {
+                result.raw = (static_cast<uint16_t>(data[0]) << 8) | data[1];
+                result.valid = true;
+              } else {
+                ESP_LOGW("reg_json", "Invalid response register %u", result.address);
+              }
+              waiting_ = false;
+              ++index_;
+            }
+          ));
+        }
+
+       private:
+        struct Entry {
+          uint16_t address{0};
+          uint16_t raw{0};
+          double scale{1.0};
+          bool holding{false};
+          bool valid{false};
+        };
+        std::vector<Entry> entries_;
+        size_t index_{0};
+        uint32_t token_{0};
+        uint32_t requested_ms_{0};
+        uint32_t last_finished_ms_{0};
+        bool ready_{false};
+        bool active_{false};
+        bool waiting_{false};
+        bool first_cycle_{true};
+
+        void fail_(const char *message) {
+          ESP_LOGE("reg_json", "%s", message);
+          entries_.clear();
+          mark_failed();
+        }
+      };
+
+      auto *sampler = new GrowattRegisterSampler();
+      sampler->ctrl = id(growatt);
+      sampler->mqttc = id(mqtt_client);
+      sampler->config = &id(mqtt_register_list);
+      sampler->topic = "${mqtt_prefix}/battery/bms_json";
+      sampler->cycle_pause_ms = ${register_cycle_pause_ms};
+      sampler->response_timeout_ms = ${register_response_timeout_ms};
+      return {sampler};
+
+
 globals:
+  # Edit this JSON list to add registers (U_WORD, input or holding).
+  # Numeric MQTT keys require unique addresses within this list.
+  - id: mqtt_register_list
+    type: std::string
+    restore_value: false
+    initial_value: 'R"json([{"type":"input","address":1013,"scale":0.1},{"type":"input","address":1090,"scale":1},{"type":"input","address":1091,"scale":1},{"type":"input","address":1092,"scale":1},{"type":"input","address":1095,"scale":1},{"type":"input","address":1108,"scale":1},{"type":"input","address":1109,"scale":1},{"type":"input","address":1110,"scale":1},{"type":"input","address":1111,"scale":1},{"type":"input","address":1112,"scale":1},{"type":"input","address":1113,"scale":1},{"type":"input","address":1114,"scale":1},{"type":"input","address":1115,"scale":1},{"type":"input","address":1116,"scale":1},{"type":"input","address":1117,"scale":1},{"type":"input","address":1118,"scale":1},{"type":"input","address":1119,"scale":1},{"type":"input","address":1120,"scale":1},{"type":"input","address":1121,"scale":1},{"type":"input","address":1122,"scale":1},{"type":"input","address":1123,"scale":1}])json"'
+
   - id: dump_request
     type: bool
     restore_value: false
@@ -523,6 +696,10 @@ sensor:
       }
       // Positiv bei Bezug (User), Negativ bei Abgabe (Grid)
       return id(leistungsbezug).state - id(leistungsabgabe).state;
+
+
+  # BMS test values are now published together by the JSON register lambda.
+
 ############################################################################################################################################
 # TEXT SENSOR
 ############################################################################################################################################
@@ -736,6 +913,43 @@ text_sensor:
                       payload: !lambda 'return id(ap_name_sensor).state;'
 
 switch:
+
+  # One-shot input block read for comparison with the cyclic single reads.
+  - platform: template
+    name: "Growatt Input Vergleich 1082-1123"
+    id: input_block_compare
+    optimistic: true
+    retain: false
+    turn_on_action:
+      - lambda: |-
+          using namespace esphome::modbus_controller;
+          id(growatt).queue_command(
+            ModbusCommandItem::create_read_command(
+              id(growatt), ModbusRegisterType::READ, 1082, 42,
+              [](ModbusRegisterType register_type, uint16_t start_address,
+                 const std::vector<uint8_t> &data) {
+                if (register_type != ModbusRegisterType::READ ||
+                    start_address != 1082 || data.size() != 84) {
+                  ESP_LOGW("INPUT_COMPARE", "Invalid input block: start=%u, bytes=%u",
+                           start_address, static_cast<unsigned>(data.size()));
+                  return;
+                }
+                const bool sent = id(mqtt_client).publish_json(
+                  "${mqtt_prefix}/debug/input_1082_1123",
+                  [&data](JsonObject root) {
+                    char key[6];
+                    for (size_t i = 0; i < 42; i++) {
+                      snprintf(key, sizeof(key), "%u", static_cast<unsigned>(1082 + i));
+                      root[key] = static_cast<uint16_t>(
+                        (static_cast<uint16_t>(data[2 * i]) << 8) | data[2 * i + 1]);
+                    }
+                  });
+                ESP_LOGW("INPUT_COMPARE", "Input block MQTT: %s", sent ? "sent" : "failed");
+              }
+            )
+          );
+      - switch.turn_off: input_block_compare
+
 
   - platform: template
     name: "Growatt Dump Holding 1000-1124"

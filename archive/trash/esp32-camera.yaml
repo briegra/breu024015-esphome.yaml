@@ -1,0 +1,309 @@
+# Version: 2026-09-11.02
+############################################################################################################################################
+# substitutions
+############################################################################################################################################
+
+substitutions:
+  devicename: "esp32-cam-gaszaehler"
+  friendly_name: "ESP32-CAM Gaszähler"
+  mqtt_prefix: "Gaszaehler_Kamera"
+  ap_fallback: "ESP32-CAM AP"
+
+############################################################################################################################################
+# esphome + boot logik
+############################################################################################################################################
+
+esphome:
+  name: "${devicename}"
+  friendly_name: "${friendly_name}"
+  includes:
+    - ap_name_mapper.h
+    - loop_time_sensor.h
+
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          ESP_LOGE("BOOT", "ESP32-CAM gestartet");
+          ESP_LOGE("BOOT", "Warte auf Initialisierung: 10 Sekunden");
+      - delay: 10s
+      - lambda: |-
+          id(restart_esp).turn_off();
+          id(gs_restart_counter)++;
+          id(gs_restart_counter_sensor).publish_state(id(gs_restart_counter));
+          id(gi_init_done) = true;
+          ESP_LOGE("BOOT", "Init abgeschlossen");
+
+############################################################################################################################################
+# esp32 board
+############################################################################################################################################
+
+esp32:
+  board: esp32cam
+
+  framework:
+    type: arduino
+
+############################################################################################################################################
+# esp32_camera
+############################################################################################################################################
+
+esp32_camera:
+  name: "Gaszähler Snapshot"
+
+  external_clock:
+    pin: GPIO0
+    frequency: 20MHz
+
+  i2c_pins:
+    sda: GPIO26
+    scl: GPIO27
+
+  data_pins:
+    - GPIO5
+    - GPIO18
+    - GPIO19
+    - GPIO21
+    - GPIO36
+    - GPIO39
+    - GPIO34
+    - GPIO35
+
+  vsync_pin: GPIO25
+  href_pin: GPIO23
+  pixel_clock_pin: GPIO22
+  power_down_pin: GPIO32
+
+  resolution: 1024x768
+  max_framerate: 1 fps
+
+############################################################################################################################################
+# kamera webserver
+############################################################################################################################################
+
+esp32_camera_web_server:
+  - port: 8080
+    mode: stream
+
+  - port: 8081
+    mode: snapshot
+
+############################################################################################################################################
+# logger / ota / wifi / api
+############################################################################################################################################
+
+logger:
+  level: DEBUG
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret vlan26_ssid
+  password: !secret vlan26_pw
+
+  fast_connect: false
+
+  manual_ip:
+    static_ip: 192.168.26.116
+    gateway: 192.168.26.1
+    subnet: 255.255.255.0
+    dns1: 192.168.26.1
+    dns2: 192.168.24.1
+
+  use_address: 192.168.26.116
+
+  ap:
+    ssid: "${ap_fallback}"
+    password: "wPsNYum3nwl9"
+
+api:
+  encryption:
+    key: !secret api_key
+  reboot_timeout: 0s
+
+############################################################################################################################################
+# time
+############################################################################################################################################
+
+time:
+  - platform: sntp
+    id: system_time
+    servers: time.myrbr.lcl
+    timezone: Europe/Berlin
+
+    on_time_sync:
+      then:
+        - logger.log: "SNTP-Zeit synchronisiert!"
+        - component.update: ts_last_boot_time
+
+############################################################################################################################################
+# globals
+############################################################################################################################################
+
+globals:
+  - id: gs_restart_counter
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+  - id: gi_init_done
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+############################################################################################################################################
+# mqtt
+############################################################################################################################################
+
+mqtt:
+  topic_prefix: "${mqtt_prefix}"
+  discovery: false
+  broker: 192.168.24.15
+  id: mqtt_client
+  port: 1887
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+
+############################################################################################################################################
+# switch
+############################################################################################################################################
+
+switch:
+
+  ############################################################################
+  ##           Restart ESP
+  ############################################################################
+
+  - platform: template
+    name: "ESP Restart"
+    id: restart_esp
+    optimistic: true
+    retain: true
+
+    command_topic: "${mqtt_prefix}/ESP32/restart/command"
+    state_topic: "${mqtt_prefix}/ESP32/restart/state"
+
+    turn_on_action:
+      - delay: 500ms
+      - lambda: |-
+          ESP_LOGI("Main", "ESP wird jetzt neugestartet...");
+          ESP.restart();
+
+  ############################################################################
+  ##           Flash LED (Blitzlicht)
+  ############################################################################
+
+  - platform: gpio
+    name: "Blitzlicht LED (GPIO4)"
+    id: sw_flash_led
+    pin: GPIO4
+    restore_mode: ALWAYS_OFF
+
+    command_topic: "${mqtt_prefix}/FlashLED/command"
+    state_topic: "${mqtt_prefix}/FlashLED/state"
+
+############################################################################################################################################
+# sensor
+############################################################################################################################################
+
+sensor:
+
+  - platform: uptime
+    id: se_esp_uptime
+    name: "ESP Uptime"
+    update_interval: 60s
+    state_topic: "${mqtt_prefix}/ESP32/uptime_seconds"
+
+  - platform: template
+    name: "ESP Restart Counter"
+    id: gs_restart_counter_sensor
+    state_topic: "${mqtt_prefix}/ESP32/restart/counter"
+    accuracy_decimals: 0
+
+############################################################################################################################################
+# text_sensor
+############################################################################################################################################
+
+text_sensor:
+
+  ############################################################################
+  ##           IP-Adresse / SSID / BSSID / MAC Adresse
+  ############################################################################
+
+  - platform: wifi_info
+
+    ip_address:
+      name: "WiFi-IPAddress"
+      state_topic: "${mqtt_prefix}/WiFi/IPAddress"
+
+    ssid:
+      name: "WiFi-SSID"
+      state_topic: "${mqtt_prefix}/WiFi/SSID"
+
+    bssid:
+      id: bssid_sensor
+      name: "WiFi-BSSID"
+      state_topic: "${mqtt_prefix}/WiFi/BSSID"
+
+    mac_address:
+      name: "WiFi-MacAddress"
+      state_topic: "${mqtt_prefix}/WiFi/MAC"
+
+  ############################################################################
+  ##           Access Point Name
+  ############################################################################
+
+  - platform: custom
+    lambda: |-
+      auto ap_name_sensor = new APNameTemplate();
+      ap_name_sensor->bssid_sensor = id(bssid_sensor);
+      App.register_component(ap_name_sensor);
+      return {ap_name_sensor};
+
+    text_sensors:
+      - name: "WiFi-Access Point Name"
+        id: ap_name_sensor
+        disabled_by_default: true
+        state_topic: "${mqtt_prefix}/WiFi/AccessPoint"
+
+  ############################################################################
+  ##           Restart Time
+  ############################################################################
+
+  - platform: template
+    name: "ESP Restart Time"
+    id: ts_last_boot_time
+    update_interval: never
+    state_topic: "${mqtt_prefix}/ESP32/restart/time"
+
+    lambda: |-
+      if (!id(system_time).now().is_valid()) {
+        return {"Warte auf SNTP..."};
+      }
+
+      auto now = id(system_time).now();
+      auto boot_timestamp = now.timestamp - (int) id(se_esp_uptime).state;
+      auto boot_time = esphome::ESPTime::from_epoch_local(boot_timestamp);
+
+      char str[25];
+
+      snprintf(
+        str,
+        sizeof(str),
+        "%02u.%02u.%02u %02u:%02u:%02u",
+        (unsigned int) boot_time.day_of_month,
+        (unsigned int) boot_time.month,
+        (unsigned int) (boot_time.year % 100),
+        (unsigned int) boot_time.hour,
+        (unsigned int) boot_time.minute,
+        (unsigned int) boot_time.second
+      );
+
+      return {str};
+
+  - platform: template
+    id: ts_esp_update_formatted
+    update_interval: 1000ms
+    state_topic: "${mqtt_prefix}/ESP32/uptime"
